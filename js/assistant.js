@@ -17,6 +17,7 @@ import {
   removeWakeWord
 } from "./languageService.js";
 import { analyzeSemanticIntent } from "./semanticLexicon.js";
+import { parsePortugueseOrder } from "./intentEngine.js";
 import { looksLikeStoryRequest } from "./storyService.js";
 import {
   formatDateTime,
@@ -27,13 +28,16 @@ import {
 } from "./utils.js";
 
 export class JordanAssistant {
-  constructor(calendar, memory, stories, { internet = null, location = null, media = null } = {}) {
+  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null } = {}) {
     this.calendar = calendar;
     this.memory = memory;
     this.stories = stories;
     this.internet = internet;
     this.location = location;
     this.media = media;
+    this.science = science;
+    this.appLauncher = appLauncher;
+    this.originalSongs = originalSongs;
     this.speechStyle = "informal";
     this.personality = "extroverted";
 
@@ -112,6 +116,9 @@ export class JordanAssistant {
       const pendingResult = await this.handlePendingAction(original, text);
       if (pendingResult) return pendingResult;
     }
+
+    const directOrder = await this.tryPortugueseOrder(original);
+    if (directOrder) return directOrder;
 
     const favoriteConversation = await this.tryFavoriteConversation(original, text);
     if (favoriteConversation) return favoriteConversation;
@@ -632,21 +639,189 @@ export class JordanAssistant {
 
   async tryMediaRequest(original, text) {
     if (!this.media) return null;
-    const wantsPlay = /\b(toque|toca|tocar|reproduza|reproduzir|play|start|pon|reproduce|再生)\b/.test(text);
-    const mentionsMedia = /\b(musica|playlist|song|music|cancion|spotify|youtube|音楽|曲)\b/.test(text);
+    const wantsPlay = /\b(toque|toca|tocar|reproduza|reproduzir|coloque|ponha|bote)\b/.test(text);
+    const mentionsMedia = /\b(musica|playlist|faixa|spotify|youtube)\b/.test(text);
     if (!wantsPlay || !mentionsMedia) return null;
 
     const query = this.media.extractMusicQuery(original);
-    if (!query) return this.response("O que você quer que eu procure pra tocar?");
-    const provider = this.media.providerFromText(original);
-    const url = this.media.buildMusicSearch(query, provider);
+    return this.prepareMediaPlayback(query, { random: /\bqualquer\b/.test(text) });
+  }
 
-    return this.response(`Preparei a busca por “${query}”. Vou abrir no ${provider === "spotify" ? "Spotify" : provider === "youtube" ? "YouTube" : "YouTube Music"}.`, {
-      action: "open-link",
-      url,
-      linkLabel: `ABRIR ${provider === "spotify" ? "SPOTIFY" : provider === "youtube" ? "YOUTUBE" : "YOUTUBE MUSIC"}`,
-      topic: "media"
-    });
+  async prepareMediaPlayback(query = "", { random = false } = {}) {
+    if (!this.media) return null;
+
+    try {
+      const result = await this.media.findPlayableTrack(query, { random });
+      if (result.status === "external") {
+        const providerLabel = result.provider === "youtube" ? "YouTube" : "YouTube Music";
+        return this.response(`Preparei a busca por “${result.query}” no ${providerLabel}.`, {
+          action: "open-link", url: result.url, linkLabel: `ABRIR ${providerLabel.toUpperCase()}`, topic: "media"
+        });
+      }
+
+      if (result.status === "needs-config") {
+        return this.response(
+          "Meu player interno está pronto, mas falta configurar o Spotify Client ID em SYS. Depois disso eu consigo pesquisar faixas e abrir o player dentro da própria JORDAN.",
+          { action: "media-auth", mediaStatus: result.status, mediaQuery: result.query, topic: "media" }
+        );
+      }
+
+      if (result.status === "needs-login") {
+        return this.response(
+          "Só falta conectar sua conta do Spotify. Abri o painel de mídia pra você autorizar.",
+          { action: "media-auth", mediaStatus: result.status, mediaQuery: result.query, topic: "media" }
+        );
+      }
+
+      if (result.status === "not-found") {
+        return this.response(`Não achei uma faixa para “${result.query}” no Spotify.`, { topic: "media" });
+      }
+
+      if (result.status === "ready") {
+        return this.response(
+          `Achei ${result.track.name}, de ${result.track.artist}. Coloquei no meu player lateral.`,
+          { action: "play-media", track: result.track, topic: "media", mood: "excited" }
+        );
+      }
+    } catch (error) {
+      return this.response(
+        "O Spotify não respondeu como eu esperava. Se a conexão expirou, abra SYS e conecte de novo.",
+        { action: "media-auth", mediaStatus: "error", topic: "media" }
+      );
+    }
+
+    return null;
+  }
+
+  async tryPortugueseOrder(original) {
+    const order = parsePortugueseOrder(original);
+    if (!order) return null;
+
+    if (order.intent === "say") {
+      if (!order.value) return this.response("O que você quer que eu diga?");
+      return this.response(order.value, { speak: order.value, casual: true });
+    }
+
+    if (order.intent === "ask_user") {
+      if (order.value) {
+        const question = /[?？]$/.test(order.value) ? order.value : `${order.value}?`;
+        return this.response(question, { casual: true, mood: "gentle" });
+      }
+      const questions = [
+        "Qual projeto seu você mais quer ver funcionando de verdade?",
+        "Se pudesse aprender uma habilidade instantaneamente, qual seria?",
+        "Qual personagem de anime você acha mais bem escrito?",
+        "O que você mudaria na sua rotina se pudesse apertar um botão agora?"
+      ];
+      return this.response(questions[Math.floor(Math.random() * questions.length)], { casual: true, mood: "excited" });
+    }
+
+    if (order.intent === "research") {
+      if (!this.internet?.enabled) return this.response("Minha internet está desligada. Use Turn on the internet e tenta de novo.");
+      if (!this.internet.online) return this.response("Tô offline agora. Posso continuar usando minhas funções locais.");
+      try {
+        const research = await this.internet.research(order.value, "pt", 3);
+        const summary = research.summary
+          ? `Pesquisei “${order.value}”. O principal resultado diz: ${research.summary}`
+          : `Não encontrei um resumo confiável nas minhas fontes rápidas para “${order.value}”. Deixei uma busca web pronta.`;
+        return this.response(summary, { action: "research-results", research, topic: "internet" });
+      } catch {
+        return this.response("Não consegui completar essa pesquisa agora.", { topic: "internet" });
+      }
+    }
+
+    if (order.intent === "play_music") {
+      return this.prepareMediaPlayback(order.value, { random: order.random });
+    }
+
+    if (order.intent === "sing") {
+      if (order.value) {
+        const mediaResult = await this.prepareMediaPlayback(order.value.replace(/^de\s+/i, ""), { random: false });
+        if (mediaResult) {
+          mediaResult.text = `Eu não reproduzo letra integral de música comercial como se fosse minha voz. Mas posso tocar a faixa no player. ${mediaResult.text}`;
+          mediaResult.speak = mediaResult.text;
+          return mediaResult;
+        }
+      }
+
+      const song = this.originalSongs?.random?.();
+      if (!song) return this.response("Posso improvisar uma música original, mas meu módulo de canto ainda não carregou.");
+      return this.response(`Beleza, improviso da JORDAN!\n${song.text}`, {
+        action: "sing-original",
+        song,
+        mood: "excited",
+        speak: song.text,
+        topic: "media"
+      });
+    }
+
+    if (order.intent === "open_app") {
+      const target = this.appLauncher?.getTarget(order.app);
+      if (!target) return null;
+      return this.response(`Abrindo ${target.label}.`, {
+        action: "launch-app",
+        appTarget: target,
+        topic: "apps"
+      });
+    }
+
+    if (order.intent === "directions") {
+      if (!this.location) return null;
+      const destination = order.value;
+      const normalized = normalizeText(destination);
+      const nearbyMap = [
+        ["posto", "fuel"], ["farmacia", "pharmacy"], ["hospital", "hospital"],
+        ["supermercado", "supermarket"], ["mercado", "supermarket"], ["restaurante", "restaurant"]
+      ];
+
+      try {
+        for (const [word, category] of nearbyMap) {
+          if (normalized.includes(word) && /\b(?:proximo|mais proximo|perto)\b/.test(normalized)) {
+            const nearest = await this.location.nearest(category, { radius: 10000, limit: 1 });
+            const place = nearest.places[0];
+            if (!place) return this.response("Não achei esse tipo de lugar perto de você.");
+            const route = await this.location.directionsTo(`${place.lat},${place.lon}`);
+            route.destinationName = place.name;
+            route.place = place;
+            return this.response(`Achei ${place.name}, a ${place.distanceLabel}. Preparei a rota.`, {
+              action: "route-results", route, topic: "location"
+            });
+          }
+        }
+
+        const route = await this.location.directionsTo(destination);
+        const distanceText = route.straightDistanceMeters ? ` Em linha reta fica a cerca de ${route.straightDistanceLabel}.` : "";
+        return this.response(`Preparei uma rota para ${route.destinationName}.${distanceText}`, {
+          action: "route-results", route, topic: "location"
+        });
+      } catch (error) {
+        if (error?.code === 1 || error?.message === "permission-denied") {
+          return this.response("Pra montar uma rota desde onde você está, preciso da permissão de localização.");
+        }
+        return this.response("Não consegui montar essa rota agora.");
+      }
+    }
+
+    if (order.intent === "science") {
+      const science = this.science?.answer?.(order.value);
+      if (science) {
+        return this.response(science.answer, { action: "science-result", science, topic: "science" });
+      }
+
+      if (this.internet?.enabled && this.internet.online) {
+        try {
+          const research = await this.internet.research(order.value, "pt", 3);
+          return this.response(
+            research.summary ? `Não reconheci uma conta fechada, então pesquisei o assunto: ${research.summary}` : "Não achei uma resposta rápida para esse problema.",
+            { action: "research-results", research, topic: "science" }
+          );
+        } catch {}
+      }
+
+      return this.response("Consigo calcular vários problemas de física e circuitos, mas preciso dos valores e unidades do problema. Por exemplo: 12 volts e 6 ohms, qual é a corrente?");
+    }
+
+    return null;
   }
 
   async trySemanticFallback(original, text, language = "pt") {
@@ -681,7 +856,7 @@ export class JordanAssistant {
     }
 
     if (semantic.intent === "assistant_has") {
-      return this.response("Eu tenho agenda própria, memória local, voz, personalidades, conversa, histórias, conhecimento offline, pesquisa online básica, localização de lugares próximos e preparação de buscas de música.", { casual: true });
+      return this.response("Eu tenho agenda própria, memória local, voz, personalidades, conversa, histórias, conhecimento offline, pesquisa online, rotas por GPS, player integrado com Spotify, abertura de apps, interpretação básica de ordens em português e um laboratório offline de física e circuitos.", { casual: true });
     }
 
     if (semantic.intent === "conversation") {

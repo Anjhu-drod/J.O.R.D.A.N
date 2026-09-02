@@ -43,6 +43,7 @@ export class VoiceService {
     this.currentSpeechText = "";
     this.speechToken = 0;
     this.audioContext = null;
+    this.preferLocalRecognition = false;
 
     // O idioma NÃO é mais detectado automaticamente. PT-BR é o padrão e só
     // muda quando o usuário escolhe outro idioma nas configurações.
@@ -55,7 +56,7 @@ export class VoiceService {
 
   get recognitionSupported() {
     return Boolean(this.Recognition);
-  }
+  }\n\n  async localRecognitionAvailability() {\n    if (!this.Recognition?.available) return "unsupported";\n    try {\n      return await this.Recognition.available({\n        langs: [this.getRecognitionLocale()],\n        processLocally: true,\n        quality: "dictation"\n      });\n    } catch {\n      return "unsupported";\n    }\n  }\n\n  async prepareLocalRecognition() {\n    if (!this.Recognition?.available || !this.Recognition?.install) return { supported: false, status: "unsupported" };\n    const locale = this.getRecognitionLocale();\n    let status = await this.localRecognitionAvailability();\n    if (status === "downloadable" || status === "downloading") {\n      const installed = await this.Recognition.install({\n        langs: [locale],\n        processLocally: true,\n        quality: "dictation"\n      });\n      if (!installed) return { supported: true, status: "failed" };\n      status = await this.localRecognitionAvailability();\n    }\n    if (status === "available") {\n      this.preferLocalRecognition = true;\n      this.rebuildRecognition();\n      return { supported: true, status: "available" };\n    }\n    return { supported: true, status };\n  }\n\n  setPreferLocalRecognition(value) {\n    this.preferLocalRecognition = Boolean(value);\n    this.rebuildRecognition();\n  }
 
   setLanguageMode(mode = "pt") {
     const allowed = ["pt", "en", "es", "ja"];
@@ -105,6 +106,7 @@ export class VoiceService {
 
     const recognition = new this.Recognition();
     recognition.lang = this.getRecognitionLocale();
+    if ("processLocally" in recognition) recognition.processLocally = this.preferLocalRecognition;
     recognition.interimResults = true;
     recognition.maxAlternatives = 5;
     recognition.continuous = true;
@@ -146,6 +148,14 @@ export class VoiceService {
         "audio-capture": "Não consegui acessar o microfone.",
         "network": "O reconhecimento de voz teve um erro de rede."
       };
+
+      if (event.error === "language-not-supported" && this.preferLocalRecognition) {
+        this.preferLocalRecognition = false;
+        this.recognition = null;
+        this.onStatusChange("O pacote local não está disponível. Voltei para reconhecimento online.");
+        if (this.alwaysListening) this.scheduleRestart(500);
+        return;
+      }
 
       if (event.error !== "no-speech" && event.error !== "aborted") {
         this.onStatusChange(messages[event.error] || `Erro de voz: ${event.error}`);
@@ -379,6 +389,37 @@ export class VoiceService {
       utterance.onerror = finish;
       window.speechSynthesis.speak(utterance);
     });
+  }
+
+  async singOriginal(lines = [], { volume = 1 } = {}) {
+    if (!this.synthesisSupported) return;
+    const sequence = Array.isArray(lines) ? lines.filter(Boolean) : String(lines || "").split(/\n+/).filter(Boolean);
+    if (!sequence.length) return;
+
+    const token = ++this.speechToken;
+    const shouldResume = this.alwaysListening;
+    if (this.listening && this.recognition) {
+      try { this.recognition.stop(); } catch {}
+    }
+    window.speechSynthesis.cancel();
+    this.setSpeakingState(true);
+
+    const melody = [1.2, 1.35, 1.26, 1.42, 1.3, 1.48];
+    for (let i = 0; i < sequence.length; i++) {
+      if (token !== this.speechToken) break;
+      await this.speakSegment({
+        text: sequence[i],
+        rate: 0.92 + (i % 2) * 0.05,
+        pitch: melody[i % melody.length]
+      }, { volume, token, language: "pt" });
+    }
+
+    if (token !== this.speechToken) return;
+    this.setSpeakingState(false);
+    if (shouldResume && this.alwaysListening && document.visibilityState === "visible") {
+      this.recognition = null;
+      this.scheduleRestart(320);
+    }
   }
 
   pronounceEnglish(text) {

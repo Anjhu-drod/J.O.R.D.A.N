@@ -12,10 +12,12 @@
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
   <link rel="stylesheet" href="./css/styles.css" />
 </head>
-<body>
+<body data-theme="crimson">
   <div class="fx-grid"></div>
   <div class="fx-vignette"></div>
   <div class="fx-scanlines"></div>
+  <div class="fx-runes" aria-hidden="true"><i>零</i><i>影</i><i>火</i><i>心</i><i>界</i><i>星</i></div>
+  <div class="fx-data-rain" aria-hidden="true"></div>
 
   <div class="app-shell">
     <header class="topbar">
@@ -286,15 +288,46 @@
             <strong id="lexiconStatus">Carregando...</strong>
             <p class="system-description">Fallback por significado e combinação de palavras.</p>
           </article>
-          <article class="hud-panel system-card media-card">
-            <span>MÍDIA</span>
-            <strong>Provedor padrão</strong>
-            <select id="mediaProviderSelect" aria-label="Provedor de música">
-              <option value="youtubeMusic">YouTube Music</option>
-              <option value="spotify">Spotify</option>
-              <option value="youtube">YouTube</option>
-            </select>
+          <article class="hud-panel system-card">
+            <span>PHYSICS LAB</span>
+            <strong>Offline · fórmulas locais</strong>
+            <p class="system-description">Lei de Ohm, potência, resistores, energia cinética, força, momento e estimativas físicas. Se não reconhecer o problema e a internet estiver ativa, tenta pesquisar.</p>
           </article>
+          <article class="hud-panel system-card media-card">
+            <span>MÍDIA / PLAYER</span>
+            <strong id="spotifyStatus">Spotify não configurado</strong>
+            <select id="mediaProviderSelect" aria-label="Provedor de música">
+              <option value="spotify">Spotify · player interno</option>
+              <option value="youtubeMusic">YouTube Music · link</option>
+              <option value="youtube">YouTube · link</option>
+            </select>
+            <input id="spotifyClientIdInput" class="system-input" type="text" autocomplete="off" placeholder="Spotify Client ID" />
+            <div class="backup-actions">
+              <button id="spotifySaveButton" class="hud-button small">SALVAR CLIENT ID</button>
+              <button id="spotifyConnectButton" class="hud-button small">CONECTAR SPOTIFY</button>
+            </div>
+            <p class="system-description">Com um Client ID do Spotify, a JORDAN pesquisa faixas e abre um player dentro da interface. O login usa PKCE, então nenhum Client Secret fica no GitHub.</p>
+          </article>
+          <article class="hud-panel system-card theme-card">
+            <span>VISUAL CORE</span>
+            <strong>Tema da interface</strong>
+            <select id="themeSelect" aria-label="Tema visual da JORDAN">
+              <option value="crimson">Crimson Core</option>
+              <option value="eclipse">Eclipse</option>
+              <option value="sakura">Sakura Protocol</option>
+              <option value="cursed">Cursed Energy</option>
+              <option value="shinobi">Cyber Shinobi</option>
+            </select>
+            <p class="system-description">Temas originais inspirados em estética de anime, HUDs e ficção científica.</p>
+          </article>
+
+          <article class="hud-panel system-card">
+            <span>OFFLINE SPEECH · EXPERIMENTAL</span>
+            <strong id="offlineSpeechStatus">Verificando suporte...</strong>
+            <button id="offlineSpeechButton" class="hud-button small">PREPARAR PT-BR LOCAL</button>
+            <p class="system-description">Quando o navegador oferecer reconhecimento local, a JORDAN pode baixar o pacote PT-BR e ouvir sem enviar a fala ao serviço remoto. Se não houver suporte, ela mantém o reconhecimento normal.</p>
+          </article>
+
           <article class="hud-panel system-card">
             <span>PWA / OFFLINE</span>
             <strong id="pwaStatus">Verificando...</strong>
@@ -332,6 +365,55 @@
       </section>
     </main>
   </div>
+
+  <aside id="companionDock" class="companion-dock" aria-label="Painel auxiliar da JORDAN">
+    <div class="companion-head">
+      <div>
+        <span class="hud-label">JORDAN AUXILIARY CORE</span>
+        <strong id="companionTitle">TOOLS</strong>
+      </div>
+      <button id="closeCompanionButton" class="text-button">FECHAR</button>
+    </div>
+
+    <div class="companion-tabs">
+      <button data-companion-target="media" class="active">MEDIA</button>
+      <button data-companion-target="research">RESEARCH</button>
+      <button data-companion-target="route">NAV</button>
+      <button data-companion-target="science">LAB</button>
+    </div>
+
+    <section class="companion-panel active" data-companion-panel="media">
+      <div id="mediaArtwork" class="media-artwork"><span>♫</span></div>
+      <span class="hud-label">NOW PLAYING</span>
+      <h3 id="mediaTrackTitle">Nenhuma faixa</h3>
+      <p id="mediaTrackArtist" class="system-description">Conecte o Spotify ou peça uma música.</p>
+      <div id="spotifyEmbedContainer" class="spotify-embed-container"></div>
+      <a id="mediaExternalLink" class="chat-action-link hidden" target="_blank" rel="noopener noreferrer">ABRIR FAIXA</a>
+    </section>
+
+    <section class="companion-panel" data-companion-panel="research">
+      <span class="hud-label">INTERNET RESEARCH</span>
+      <h3 id="researchTitle">Nenhuma pesquisa</h3>
+      <p id="researchSummary" class="companion-copy">Diga “pesquise...” para abrir resultados aqui.</p>
+      <div id="researchSources" class="companion-links"></div>
+    </section>
+
+    <section class="companion-panel" data-companion-panel="route">
+      <div class="nav-radar"><i></i><i></i><span>⌖</span></div>
+      <span class="hud-label">NAVIGATION</span>
+      <h3 id="routeTitle">Nenhuma rota</h3>
+      <p id="routeDistance" class="companion-copy">Peça “como chegar...” ou “me leve para...”.</p>
+      <a id="routeLink" class="chat-action-link hidden" target="_blank" rel="noopener noreferrer">INICIAR ROTA</a>
+    </section>
+
+    <section class="companion-panel" data-companion-panel="science">
+      <span class="hud-label">PHYSICS / CIRCUIT LAB</span>
+      <h3 id="scienceTitle">Laboratório pronto</h3>
+      <p id="scienceAnswer" class="companion-copy">Ex.: “12 volts e 6 ohms, qual é a corrente?”</p>
+      <code id="scienceFormula" class="science-formula">V = I · R</code>
+      <div id="scienceDetails" class="science-details"></div>
+    </section>
+  </aside>
 
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
@@ -427,55 +509,62 @@
       <div class="tutorial-grid">
         <section>
           <span>AGENDA</span>
-          <p>“Jordan, marque dentista amanhã às 6.”</p>
+          <p>“Marque dentista amanhã às 6.”</p>
           <p>“O que tenho amanhã?”</p>
           <p>“Quais horários livres tenho sexta?”</p>
           <p>“Adie dentista para 16h.”</p>
         </section>
         <section>
-          <span>MEMÓRIA</span>
+          <span>ORDENS EM PORTUGUÊS</span>
+          <p>“Diga boa noite.”</p>
+          <p>“Me pergunte alguma coisa.”</p>
+          <p>“Pesquise buracos negros.”</p>
+          <p>“Abra o YouTube.”</p>
+        </section>
+        <section>
+          <span>MÍDIA</span>
+          <p>“Toque Numb Linkin Park.”</p>
+          <p>“Toque uma música qualquer.”</p>
+          <p>“Cante alguma coisa.” → improviso original.</p>
+          <p>Configure o Spotify Client ID em SYS.</p>
+        </section>
+        <section>
+          <span>NAVEGAÇÃO</span>
+          <p>“Como chegar no shopping?”</p>
+          <p>“Me leve para o posto mais próximo.”</p>
+          <p>“Rota para Florianópolis.”</p>
+          <p>GPS só é usado quando você pede.</p>
+        </section>
+        <section>
+          <span>PHYSICS LAB</span>
+          <p>“12 volts e 6 ohms, qual a corrente?”</p>
+          <p>“10 e 20 ohms em paralelo.”</p>
+          <p>“Energia cinética de 70 kg a 10 m/s.”</p>
+          <p>Funciona offline para contas reconhecidas.</p>
+        </section>
+        <section>
+          <span>MEMÓRIA / CONVERSA</span>
           <p>“Eu moro em Tijucas.”</p>
-          <p>“Meu número de telefone é...”</p>
-          <p>“O que você sabe sobre mim?”</p>
-          <p>“Esqueça minha cidade.”</p>
-        </section>
-        <section>
-          <span>PERSONALIDADE</span>
-          <p>“Seja extrovertida.”</p>
-          <p>“Seja introvertida.”</p>
-          <p>“Fale com gírias.”</p>
-          <p>“Fique mais formal.”</p>
-        </section>
-        <section>
-          <span>CONVERSA</span>
+          <p>“Meu anime favorito é...”</p>
           <p>“Vamos conversar.”</p>
-          <p>“Vou te contar uma história.”</p>
-          <p>“Conte uma história.”</p>
-          <p>“Qual é a fruta do Luffy?”</p>
+          <p>“Conte uma história qualquer.”</p>
         </section>
         <section>
-          <span>INTERNET / LOCAL</span>
-          <p>“Jordan, quem foi Nikola Tesla?”</p>
-          <p>“Jordan, aonde fica o gas station mais próximo?”</p>
-          <p>“Jordan, qual a farmácia mais próxima?”</p>
-          <p>“Jordan, toque minha playlist no Spotify.”</p>
-        </section>
-        <section>
-          <span>SISTEMA / IDIOMAS</span>
-          <p>“Hi Jordan, who is Alan Turing?”</p>
-          <p>“Hola Jordan, quién es Messi?”</p>
-          <p>“Jordan, onde eu altero sua voz?”</p>
-          <p>“Como faço backup?”</p>
+          <span>ENGLISH SYSTEM</span>
+          <p>“Open the audio.” · “Turn off the audio.”</p>
+          <p>“Open the player.” · “Open the lab.”</p>
+          <p>“Open the navigation.” · “Close the panel.”</p>
+          <p>Use ▶ PRONÚNCIA em SYS para treinar.</p>
         </section>
         <section>
           <span>AJUDA</span>
           <p>“Ajuda” abre o painel de ligação.</p>
           <p>Polícia: 190 · SAMU: 192 · Bombeiros: 193.</p>
-          <p>O número prioritário pode ser alterado por comando.</p>
+          <p>A JORDAN nunca liga sem sua confirmação.</p>
         </section>
       </div>
 
-      <div class="tutorial-footer">Dica: no modo contínuo, diga “Jordan” antes do comando. Depois de 2 segundos de silêncio, eu processo a frase.</div>
+      <div class="tutorial-footer">Dica: com o Áudio Contínuo ativo você não precisa dizer “Jordan”. Conversa e ordens ficam em PT-BR; comandos do núcleo do sistema continuam em inglês.</div>
     </div>
   </dialog>
 

@@ -8,6 +8,9 @@ import { StoryService } from "./storyService.js";
 import { InternetService } from "./internetService.js";
 import { LocationService } from "./locationService.js";
 import { MediaService } from "./mediaService.js";
+import { ScienceService } from "./scienceService.js";
+import { AppLauncherService } from "./appLauncherService.js";
+import { OriginalSongService } from "./originalSongService.js";
 import { getLexiconStats } from "./semanticLexicon.js";
 import { getSystemCommands, matchSystemCommand } from "./systemCommandService.js";
 import { detectEventProfile } from "./eventProfiles.js";
@@ -27,10 +30,16 @@ const stories = new StoryService(memory);
 const internet = new InternetService();
 const locationService = new LocationService();
 const media = new MediaService();
+const science = new ScienceService();
+const appLauncher = new AppLauncherService();
+const originalSongs = new OriginalSongService();
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
-  media
+  media,
+  science,
+  appLauncher,
+  originalSongs
 });
 const ui = new JordanUI(calendar, memory);
 
@@ -39,7 +48,9 @@ let voiceEnabled = true;
 let assistantVolume = 1;
 let languageMode = "pt";
 let internetEnabled = true;
-let mediaProvider = "youtubeMusic";
+let mediaProvider = "spotify";
+let spotifyClientId = "";
+let theme = "crimson";
 let idleTimer = null;
 let lastInteractionAt = Date.now();
 
@@ -94,19 +105,43 @@ async function initialize() {
     await setSetting("languageMode", "pt");
   }
   internetEnabled = await getSetting("internetEnabled", true);
-  mediaProvider = await getSetting("mediaProvider", "youtubeMusic");
+  mediaProvider = await getSetting("mediaProvider", "spotify");
+  const mediaDefaultApplied = await getSetting("v06MediaDefaultApplied", false);
+  if (!mediaDefaultApplied) {
+    mediaProvider = "spotify";
+    await setSetting("mediaProvider", "spotify");
+    await setSetting("v06MediaDefaultApplied", true);
+  }
+  spotifyClientId = await getSetting("spotifyClientId", "");
+  theme = await getSetting("theme", "crimson");
 
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
   internet.setEnabled(internetEnabled);
   media.setDefaultProvider(mediaProvider);
+  media.configureSpotify({ clientId: spotifyClientId, redirectUri: `${location.origin}${location.pathname}` });
+  ui.setTheme(theme);
 
   if (ui.elements.languageModeSelect) ui.elements.languageModeSelect.value = languageMode;
   if (ui.elements.mediaProviderSelect) ui.elements.mediaProviderSelect.value = mediaProvider;
+  if (ui.elements.spotifyClientIdInput) ui.elements.spotifyClientIdInput.value = spotifyClientId;
+  if (ui.elements.themeSelect) ui.elements.themeSelect.value = theme;
+  ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });
   ui.setLanguageStatus(languageMode, voice.currentLanguage);
   ui.setInternetStatus({ enabled: internetEnabled, online: navigator.onLine });
   ui.setLexiconStatus(getLexiconStats());
   renderSystemCommandLearning();
+
+  try {
+    const spotifyReturned = await media.handleSpotifyCallback();
+    if (spotifyReturned) {
+      ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });
+      ui.toast("Spotify conectado à JORDAN.");
+    }
+  } catch (error) {
+    console.warn("Spotify callback:", error);
+    ui.toast("Não consegui concluir o login do Spotify.");
+  }
 
   if (internetEnabled && navigator.onLine) {
     internet.testConnection().then((test) => {
@@ -115,7 +150,7 @@ async function initialize() {
   }
 
   ui.elements.speechRecognitionStatus.textContent =
-    voice.recognitionSupported ? "Disponível · silêncio: 2 s" : "Indisponível neste navegador";
+    voice.recognitionSupported ? "Disponível · silêncio: 2 s" : "Indisponível neste navegador";\n\n  if (ui.elements.offlineSpeechStatus) {\n    voice.localRecognitionAvailability().then((status) => {\n      const labels = {\n        available: "PT-BR local disponível",\n        downloadable: "Pacote PT-BR disponível para download",\n        downloading: "Pacote PT-BR baixando",\n        unavailable: "Reconhecimento local indisponível",\n        unsupported: "Navegador sem suporte"\n      };\n      ui.elements.offlineSpeechStatus.textContent = labels[status] || status;\n    });\n  }
 
   updateVoiceStatus();
   ui.setPersonality(assistant.getPersonality());
@@ -267,9 +302,9 @@ function bindEvents() {
     media.setDefaultProvider(mediaProvider);
     await setSetting("mediaProvider", mediaProvider);
     ui.toast(`Provedor de mídia: ${event.target.selectedOptions[0]?.textContent || mediaProvider}.`);
-  });
+  });\n\n  ui.elements.themeSelect?.addEventListener("change", async (event) => {\n    registerInteraction();\n    theme = event.target.value;\n    ui.setTheme(theme);\n    await setSetting("theme", theme);\n    ui.toast(`Tema visual: ${event.target.selectedOptions[0]?.textContent || theme}.`);\n  });\n\n  ui.elements.spotifySaveButton?.addEventListener("click", async () => {\n    registerInteraction();\n    spotifyClientId = ui.elements.spotifyClientIdInput?.value?.trim() || "";\n    await setSetting("spotifyClientId", spotifyClientId);\n    media.configureSpotify({ clientId: spotifyClientId, redirectUri: `${location.origin}${location.pathname}` });\n    ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });\n    ui.toast(spotifyClientId ? "Spotify Client ID salvo." : "Spotify Client ID removido.");\n  });\n\n  ui.elements.spotifyConnectButton?.addEventListener("click", async () => {\n    registerInteraction();\n    spotifyClientId = ui.elements.spotifyClientIdInput?.value?.trim() || spotifyClientId;\n    if (!spotifyClientId) {\n      ui.toast("Cole seu Spotify Client ID primeiro.");\n      return;\n    }\n    await setSetting("spotifyClientId", spotifyClientId);\n    media.configureSpotify({ clientId: spotifyClientId, redirectUri: `${location.origin}${location.pathname}` });\n    try {\n      await media.connectSpotify();\n    } catch (error) {\n      ui.toast("Não consegui iniciar a conexão com Spotify.");\n    }\n  });\n\n  document.querySelectorAll("[data-companion-target]").forEach((button) => {\n    button.addEventListener("click", () => ui.openCompanion(button.dataset.companionTarget));\n  });\n  ui.elements.closeCompanionButton?.addEventListener("click", () => ui.closeCompanion());
 
-  ui.elements.testVoiceButton.addEventListener("click", async () => {
+  ui.elements.offlineSpeechButton?.addEventListener("click", async () => {\n    registerInteraction();\n    ui.elements.offlineSpeechStatus.textContent = "Preparando pacote local...";\n    const result = await voice.prepareLocalRecognition();\n    const labels = {\n      available: "PT-BR local ativado",\n      downloadable: "Pacote ainda precisa ser baixado",\n      downloading: "Pacote em download",\n      unavailable: "PT-BR local indisponível",\n      failed: "Falha ao instalar pacote local",\n      unsupported: "Navegador sem suporte"\n    };\n    ui.elements.offlineSpeechStatus.textContent = labels[result.status] || result.status;\n    ui.toast(result.status === "available" ? "Reconhecimento PT-BR local ativado." : "Este navegador continuará usando o reconhecimento normal.");\n  });\n\n  ui.elements.testVoiceButton.addEventListener("click", async () => {
     registerInteraction();
     if (voice.isSpeaking) voice.cancelSpeech();
     const profile = assistant.getPersonality();
@@ -466,6 +501,32 @@ async function handleCommand(text, { fromVoice = false } = {}) {
       ui.addLocationLinks(result.places);
       if (ui.elements.locationStatus) ui.elements.locationStatus.textContent = `${result.places.length} locais encontrados`;
     }
+    if (result.action === "play-media" && result.track) {
+      ui.renderMediaTrack(result.track);
+    }
+    if (result.action === "media-auth") {
+      ui.openCompanion("media");
+      ui.openView("system");
+      ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });
+    }
+    if (result.action === "research-results" && result.research) {
+      ui.renderResearch(result.research);
+    }
+    if (result.action === "route-results" && result.route) {
+      ui.renderRoute(result.route);
+      if (ui.elements.locationStatus) ui.elements.locationStatus.textContent = "Rota preparada";
+    }
+    if (result.action === "science-result" && result.science) {
+      ui.renderScience(result.science);
+    }
+    if (result.action === "launch-app" && result.appTarget?.url) {
+      const popup = window.open(result.appTarget.url, "_blank", "noopener,noreferrer");
+      if (!popup) ui.addExternalLink(`ABRIR ${result.appTarget.label}`, result.appTarget.url, "APP / SITE");
+    }
+    if (result.action === "sing-original" && result.song?.text && voice.synthesisSupported) {
+      // A fala normal abaixo usa a prosódia da JORDAN; a letra é um improviso original do próprio app.
+      ui.openCompanion("media");
+    }
     if (result.sourceUrl) {
       ui.addSourceLink(result.sourceTitle || "Pesquisa", result.sourceUrl, result.source || "WEB");
     }
@@ -478,7 +539,9 @@ async function handleCommand(text, { fromVoice = false } = {}) {
       resetIdleTimer();
     }
 
-    if (voiceEnabled && voice.synthesisSupported && result.speak) {
+    if (voiceEnabled && voice.synthesisSupported && result.action === "sing-original" && result.song?.lines) {
+      await voice.singOriginal(result.song.lines, { volume: assistantVolume });
+    } else if (voiceEnabled && voice.synthesisSupported && result.speak) {
       const profile = assistant.getPersonality();
       await voice.speak(result.speak, {
         volume: assistantVolume,
@@ -560,7 +623,7 @@ async function executeSystemCommand(command) {
   if (id === "open_tutorial") {
     ui.openTutorialPanel();
     return;
-  }
+  }\n\n  if (id === "open_player") {\n    ui.openCompanion("media");\n    return;\n  }\n\n  if (id === "open_research") {\n    ui.openCompanion("research");\n    return;\n  }\n\n  if (id === "open_navigation") {\n    ui.openCompanion("route");\n    return;\n  }\n\n  if (id === "open_lab") {\n    ui.openCompanion("science");\n    return;\n  }\n\n  if (id === "close_panel") {\n    ui.closeCompanion();\n    return;\n  }
 
   if (id === "internet_on" || id === "internet_off") {
     internetEnabled = id === "internet_on";

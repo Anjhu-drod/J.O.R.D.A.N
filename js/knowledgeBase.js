@@ -12,7 +12,7 @@ export const EMERGENCY_NUMBERS = {
 const SYSTEM_QA = [
   {
     keywords: ["onde altero sua voz", "aonde altero sua voz", "onde eu altero sua voz", "aonde eu altero sua voz", "onde mudar sua voz", "aonde mudar sua voz", "como mudar sua voz", "trocar sua voz", "alterar sua voz"],
-    answer: "Abra SYS, depois a seção Voz da JORDAN. Lá você pode deixar no modo automático Google PT-BR ou escolher outra voz disponível no aparelho."
+    answer: "Abra SYS e veja a seção Voice Profile. A voz atual usa um perfil original da JORDAN sobre o sintetizador disponível no aparelho. Para ter o mesmo timbre em PC, iPhone e Android, o próximo passo é ligar um motor neural próprio pela JORDAN API."
   },
   {
     keywords: ["onde fica seu calendario", "onde esta seu calendario", "abrir calendario", "acessar calendario"],
@@ -29,6 +29,18 @@ const SYSTEM_QA = [
   {
     keywords: ["voce tem internet", "tem acesso a internet", "voce pesquisa na internet", "pode pesquisar na internet"],
     answer: "Sim. Nesta versão eu já consigo consultar fontes públicas da internet, como a Wikipedia, e também usar localização para procurar lugares próximos quando você autorizar. Informações mais complexas ainda vão melhorar quando o JORDAN API ganhar um modelo de IA."
+  },
+  {
+    keywords: ["como tocar musica", "player de musica", "player do spotify", "conectar spotify"],
+    answer: "Abra SYS, vá em MÍDIA / PLAYER, cole seu Spotify Client ID e conecte a conta. Depois você pode dizer coisas como 'toque Numb Linkin Park' ou 'toque uma música qualquer'."
+  },
+  {
+    keywords: ["voce abre aplicativos", "pode abrir aplicativos", "abrir youtube", "abrir apps"],
+    answer: "Consigo abrir vários sites e apps por links compatíveis, como YouTube, X, Instagram, Spotify, WhatsApp, TikTok, Discord, Reddit, GitHub, Maps e Gmail. Controle profundo de outros apps exige a futura versão nativa com Capacitor e permissões específicas."
+  },
+  {
+    keywords: ["voce sabe fisica", "physics lab", "circuitos eletricos", "circuitos elétricos"],
+    answer: "Tenho um Physics Lab local para Lei de Ohm, potência, resistores, energia, força e outras contas básicas. Quando o problema foge do meu cálculo local e a internet está ativa, tento pesquisar contexto adicional."
   },
   {
     keywords: ["como fazer backup", "backup", "exportar memoria"],

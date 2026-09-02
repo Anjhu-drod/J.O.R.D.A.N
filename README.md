@@ -1,57 +1,103 @@
-# JORDAN V0.5 — Voice / Manual Language / English System Control
+# JORDAN V0.6 — PATCH sobre a V0.5
 
-Patch incremental sobre a V0.4.
+Esta versão amplia a JORDAN como assistente geral, sem transformar o projeto em outro sistema do zero.
 
-## Regras desta versão
+## Destaques
 
-- Conversa padrão: Português do Brasil.
-- Troca de idioma: somente manual em SYS (PT-BR / EN-US / ES / JA).
-- Áudio contínuo: ligado por padrão.
-- Com áudio contínuo ligado não é necessário dizer “Jordan”. Após ~2 s de silêncio a frase é enviada.
-- Comandos que alteram o sistema são frases curtas em inglês.
-- Variações aceitas são deliberadamente pequenas para evitar comandos acidentais.
-- Cada comando de sistema aparece em SYS com botão de pronúncia.
-- Criador da JORDAN: Jhuan, pronunciado “Ruan”. Esta memória é CORE e protegida.
+- Ordens básicas em português por verbo:
+  - diga / fale / repita
+  - pergunte
+  - pesquise / procure / busque
+  - toque / reproduza
+  - cante
+  - abra apps/sites conhecidos
+  - como chegar / rota / me leve
+  - perguntas reconhecidas de física e circuitos
+- Player lateral integrado com Spotify via OAuth PKCE.
+- Pesquisa de faixas pelo Spotify Web API e player incorporado na interface.
+- Painel auxiliar lateral com MEDIA, RESEARCH, NAV e PHYSICS LAB.
+- Rotas com GPS + Google Maps e geocodificação online.
+- Abertura de YouTube, X, Instagram, Spotify, WhatsApp, TikTok, Discord, Reddit, GitHub, Maps e Gmail.
+- Physics Lab offline:
+  - Lei de Ohm
+  - potência elétrica
+  - resistores em série/paralelo
+  - energia cinética
+  - momento linear
+  - força
+  - estimativa hidrodinâmica didática para perguntas como corrida sobre água
+- Pesquisa online explícita por “pesquise...”.
+- Mais temas visuais:
+  - Crimson Core
+  - Eclipse
+  - Sakura Protocol
+  - Cursed Energy
+  - Cyber Shinobi
+- Novo HUD decorativo com caracteres, radar e painéis sci-fi.
+- Reconhecimento de fala local experimental quando o navegador oferece SpeechRecognition on-device.
+- Novos comandos de sistema em inglês:
+  - Open the player
+  - Open the research
+  - Open the navigation
+  - Open the lab
+  - Close the panel
+
+## Música e canto
+
+A JORDAN não baixa nem copia letras integrais de músicas comerciais para reproduzi-las com a própria voz.
+
+Quando você pede para tocar uma música, ela usa o player integrado com Spotify.
+
+Quando você pede para cantar algo sem especificar uma obra comercial, ela usa um pequeno improviso original criado para a própria JORDAN e aplica uma prosódia de “canto” simples no SpeechSynthesis.
+
+## Configurar Spotify
+
+1. Entre em https://developer.spotify.com/dashboard
+2. Crie um app.
+3. Copie o Client ID.
+4. No app do Spotify, adicione como Redirect URI exatamente a URL onde a JORDAN roda.
+
+Exemplo GitHub Pages:
+
+https://SEU-USUARIO.github.io/JORDAN/
+
+Exemplo local:
+
+http://127.0.0.1:5500/
+
+Observação: o Spotify não aceita `localhost` como Redirect URI; use 127.0.0.1 no teste local.
+
+5. Na JORDAN abra SYS > MÍDIA / PLAYER.
+6. Cole o Client ID.
+7. Clique SALVAR CLIENT ID.
+8. Clique CONECTAR SPOTIFY.
+9. Autorize a JORDAN.
+
+Não existe Client Secret no frontend. A autenticação usa Authorization Code + PKCE.
+
+## Exemplos
+
+- Diga “boa noite, mundo”.
+- Me pergunte alguma coisa.
+- Pesquise buracos negros.
+- Abra o YouTube.
+- Toque Numb Linkin Park.
+- Toque uma música qualquer.
+- Cante alguma coisa.
+- Como chegar no shopping?
+- Me leve para o posto mais próximo.
+- 12 volts e 6 ohms, qual é a corrente?
+- Quanto dá 10 e 20 ohms em paralelo?
+- Qual a velocidade uma pessoa de 105 quilos teria que correr para correr sobre a água?
+
+## Offline
+
+A interface, calendário, memória, histórias, parser de comandos e Physics Lab continuam disponíveis pelo cache PWA.
+
+O reconhecimento de voz normal pode depender da internet em alguns navegadores. A V0.6 detecta a API experimental de reconhecimento local e oferece o botão PREPARAR PT-BR LOCAL quando houver suporte.
+
+Pesquisa web, Spotify, geocodificação e rotas externas precisam de internet.
 
 ## Voz
 
-A V0.5 cria o perfil ORIGINAL `JORDAN Spark · PT-BR`: jovem, agudo, rápido e expressivo, com prosódia controlada por script para perguntas, exclamações e diferentes estados emocionais.
-
-Importante: esta versão ainda usa `SpeechSynthesis` como fonte do timbre-base. Por isso o timbre pode variar entre Windows, iPhone e Android. O script controla ritmo, pitch, entonação, segmentação e emoção, mas não consegue fabricar sozinho um timbre neural humano idêntico em todos os aparelhos. Para isso, o próximo passo é integrar um modelo TTS neural próprio/licenciado, local ou pela JORDAN API.
-
-## Comandos do sistema
-
-Principais frases:
-
-- Open the audio
-- Turn off the audio
-- Shut up
-- Open the calendar
-- Open the memory
-- Open the settings
-- Go home
-- Open the tutorial
-- Turn on the internet
-- Turn off the internet
-- Mute the voice
-- Unmute the voice
-- Volume up
-- Volume down
-- Clear the chat
-
-No SYS, cada frase possui descrição, aproximação de pronúncia e botão `PRONÚNCIA`.
-
-## Atualização do GitHub
-
-Este update deve ser distribuído como patch. Substitua os arquivos ALTERADOS e adicione os CRIADOS, mantendo todos os outros arquivos da V0.4.
-
-Após o deploy:
-
-1. Faça `Ctrl + F5` no PC.
-2. No celular/PWA, feche e abra novamente.
-3. O Service Worker usa o cache `jordan-v0.5.0`.
-4. Na primeira abertura desta versão, o áudio contínuo é migrado para ligado uma única vez. Depois, a escolha do usuário passa a ser respeitada.
-
-## Segurança de chaves
-
-Nunca coloque API keys privadas diretamente no JavaScript publicado no GitHub Pages. Serviços com segredos (IA privada, Spotify controlável, TTS neural pago etc.) devem passar pela futura JORDAN API/backend.
+A voz atual ainda usa SpeechSynthesis como base. Para ter exatamente a mesma voz da JORDAN em PC, iPhone e Android, o próximo passo correto é um motor neural próprio/original servido pela JORDAN API ou embarcado localmente. Não é possível garantir um timbre fixo entre aparelhos usando somente as vozes fornecidas por cada navegador.

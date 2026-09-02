@@ -56,6 +56,8 @@ export class JordanUI {
       personalitySelect: document.querySelector("#personalitySelect"),
       personalityDescription: document.querySelector("#personalityDescription"),
       pwaStatus: document.querySelector("#pwaStatus"),
+      offlineSpeechStatus: document.querySelector("#offlineSpeechStatus"),
+      offlineSpeechButton: document.querySelector("#offlineSpeechButton"),
       coreLanguageStatus: document.querySelector("#coreLanguageStatus"),
       languageStatus: document.querySelector("#languageStatus"),
       languageModeSelect: document.querySelector("#languageModeSelect"),
@@ -64,8 +66,32 @@ export class JordanUI {
       locationStatus: document.querySelector("#locationStatus"),
       lexiconStatus: document.querySelector("#lexiconStatus"),
       mediaProviderSelect: document.querySelector("#mediaProviderSelect"),
+      spotifyStatus: document.querySelector("#spotifyStatus"),
+      spotifyClientIdInput: document.querySelector("#spotifyClientIdInput"),
+      spotifySaveButton: document.querySelector("#spotifySaveButton"),
+      spotifyConnectButton: document.querySelector("#spotifyConnectButton"),
+      themeSelect: document.querySelector("#themeSelect"),
       systemCommandList: document.querySelector("#systemCommandList"),
       toastContainer: document.querySelector("#toastContainer"),
+
+      companionDock: document.querySelector("#companionDock"),
+      companionTitle: document.querySelector("#companionTitle"),
+      closeCompanionButton: document.querySelector("#closeCompanionButton"),
+      mediaArtwork: document.querySelector("#mediaArtwork"),
+      mediaTrackTitle: document.querySelector("#mediaTrackTitle"),
+      mediaTrackArtist: document.querySelector("#mediaTrackArtist"),
+      spotifyEmbedContainer: document.querySelector("#spotifyEmbedContainer"),
+      mediaExternalLink: document.querySelector("#mediaExternalLink"),
+      researchTitle: document.querySelector("#researchTitle"),
+      researchSummary: document.querySelector("#researchSummary"),
+      researchSources: document.querySelector("#researchSources"),
+      routeTitle: document.querySelector("#routeTitle"),
+      routeDistance: document.querySelector("#routeDistance"),
+      routeLink: document.querySelector("#routeLink"),
+      scienceTitle: document.querySelector("#scienceTitle"),
+      scienceAnswer: document.querySelector("#scienceAnswer"),
+      scienceFormula: document.querySelector("#scienceFormula"),
+      scienceDetails: document.querySelector("#scienceDetails"),
 
       eventDialog: document.querySelector("#eventDialog"),
       eventDialogTitle: document.querySelector("#eventDialogTitle"),
@@ -254,6 +280,130 @@ export class JordanUI {
 
     this.elements.conversation.appendChild(card);
     this.elements.conversation.scrollTop = this.elements.conversation.scrollHeight;
+  }
+
+  setTheme(theme = "crimson") {
+    const allowed = ["crimson", "eclipse", "sakura", "cursed", "shinobi"];
+    const selected = allowed.includes(theme) ? theme : "crimson";
+    document.body.dataset.theme = selected;
+    if (this.elements.themeSelect) this.elements.themeSelect.value = selected;
+  }
+
+  setSpotifyStatus({ configured = false, connected = false } = {}) {
+    if (!this.elements.spotifyStatus) return;
+    if (!configured) {
+      this.elements.spotifyStatus.textContent = "Spotify não configurado";
+      if (this.elements.spotifyConnectButton) this.elements.spotifyConnectButton.textContent = "CONECTAR SPOTIFY";
+      return;
+    }
+    this.elements.spotifyStatus.textContent = connected ? "Spotify conectado" : "Client ID salvo · login pendente";
+    if (this.elements.spotifyConnectButton) this.elements.spotifyConnectButton.textContent = connected ? "RECONECTAR SPOTIFY" : "CONECTAR SPOTIFY";
+  }
+
+  openCompanion(panel = "media") {
+    if (!this.elements.companionDock) return;
+    const labels = { media: "MEDIA", research: "RESEARCH", route: "NAVIGATION", science: "PHYSICS LAB" };
+    this.elements.companionDock.classList.add("open");
+    if (this.elements.companionTitle) this.elements.companionTitle.textContent = labels[panel] || "TOOLS";
+    document.querySelectorAll("[data-companion-panel]").forEach((item) => {
+      item.classList.toggle("active", item.dataset.companionPanel === panel);
+    });
+    document.querySelectorAll("[data-companion-target]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.companionTarget === panel);
+    });
+  }
+
+  closeCompanion() {
+    this.elements.companionDock?.classList.remove("open");
+  }
+
+  renderMediaTrack(track) {
+    if (!track) return;
+    this.openCompanion("media");
+    if (this.elements.mediaTrackTitle) this.elements.mediaTrackTitle.textContent = track.name || "Faixa";
+    if (this.elements.mediaTrackArtist) this.elements.mediaTrackArtist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
+    if (this.elements.mediaArtwork) {
+      this.elements.mediaArtwork.innerHTML = track.image
+        ? `<img src="${track.image}" alt="Capa de ${track.name || "faixa"}" referrerpolicy="no-referrer" />`
+        : "<span>♫</span>";
+    }
+    if (this.elements.spotifyEmbedContainer) {
+      this.elements.spotifyEmbedContainer.innerHTML = "";
+      if (track.embedUrl) {
+        const frame = document.createElement("iframe");
+        frame.src = track.embedUrl;
+        frame.width = "100%";
+        frame.height = "152";
+        frame.frameBorder = "0";
+        frame.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+        frame.loading = "lazy";
+        frame.title = `Spotify · ${track.name || "faixa"}`;
+        this.elements.spotifyEmbedContainer.appendChild(frame);
+      }
+    }
+    if (this.elements.mediaExternalLink) {
+      this.elements.mediaExternalLink.href = track.url || "#";
+      this.elements.mediaExternalLink.classList.toggle("hidden", !track.url);
+    }
+  }
+
+  renderResearch(research) {
+    if (!research) return;
+    this.openCompanion("research");
+    if (this.elements.researchTitle) this.elements.researchTitle.textContent = research.query || "Pesquisa";
+    if (this.elements.researchSummary) this.elements.researchSummary.textContent = research.summary || "Sem resumo direto.";
+    if (this.elements.researchSources) {
+      this.elements.researchSources.innerHTML = "";
+      for (const source of research.sources || []) {
+        const link = document.createElement("a");
+        link.className = "chat-action-link";
+        link.href = source.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = `${source.source || "WEB"} · ${source.title}`;
+        this.elements.researchSources.appendChild(link);
+      }
+      if (research.searchUrl) {
+        const link = document.createElement("a");
+        link.className = "chat-action-link secondary-link";
+        link.href = research.searchUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "PESQUISAR NA WEB";
+        this.elements.researchSources.appendChild(link);
+      }
+    }
+  }
+
+  renderRoute(route) {
+    if (!route) return;
+    this.openCompanion("route");
+    if (this.elements.routeTitle) this.elements.routeTitle.textContent = route.destinationName || route.destinationQuery || "Destino";
+    if (this.elements.routeDistance) {
+      this.elements.routeDistance.textContent = route.straightDistanceMeters
+        ? `Distância em linha reta: ${route.straightDistanceLabel}. Toque abaixo para abrir navegação curva-a-curva.`
+        : "Rota preparada. O mapa calculará distância e trânsito.";
+    }
+    if (this.elements.routeLink) {
+      this.elements.routeLink.href = route.mapsUrl || "#";
+      this.elements.routeLink.classList.toggle("hidden", !route.mapsUrl);
+    }
+  }
+
+  renderScience(science) {
+    if (!science) return;
+    this.openCompanion("science");
+    if (this.elements.scienceTitle) this.elements.scienceTitle.textContent = science.title || "Physics Lab";
+    if (this.elements.scienceAnswer) this.elements.scienceAnswer.textContent = science.answer || "";
+    if (this.elements.scienceFormula) this.elements.scienceFormula.textContent = science.formula || "";
+    if (this.elements.scienceDetails) {
+      this.elements.scienceDetails.innerHTML = "";
+      for (const detail of science.details || []) {
+        const item = document.createElement("div");
+        item.textContent = detail;
+        this.elements.scienceDetails.appendChild(item);
+      }
+    }
   }
 
   clearChat() {

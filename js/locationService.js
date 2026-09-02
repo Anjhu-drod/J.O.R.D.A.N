@@ -29,6 +29,21 @@ function readableDistance(meters) {
   return `${(meters / 1000).toFixed(1).replace(".", ",")} km`;
 }
 
+async function fetchJson(url, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "application/json", "Accept-Language": "pt-BR,pt;q=0.9" },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`http-${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const CATEGORY_CONFIG = {
   fuel: { tag: '["amenity"="fuel"]', label: "posto de combustível", fallback: "Posto de combustível" },
   pharmacy: { tag: '["amenity"="pharmacy"]', label: "farmácia", fallback: "Farmácia" },
@@ -86,7 +101,7 @@ export class LocationService {
             lat: placeLat,
             lon: placeLon,
             distanceMeters: distanceMeters(lat, lon, placeLat, placeLon),
-            mapsUrl: `https://www.google.com/maps/search/?api=1&query=${placeLat},${placeLon}`
+            mapsUrl: this.buildDirectionsUrl(`${placeLat},${placeLon}`, position)
           };
         })
         .filter(Boolean)
@@ -98,6 +113,74 @@ export class LocationService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  async geocode(destination) {
+    if (!navigator.onLine) throw new Error("offline");
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.search = new URLSearchParams({
+      q: destination,
+      format: "jsonv2",
+      limit: "1",
+      addressdetails: "1"
+    }).toString();
+    const results = await fetchJson(url, 10000);
+    const hit = results?.[0];
+    if (!hit) return null;
+    return {
+      name: hit.display_name,
+      lat: Number(hit.lat),
+      lon: Number(hit.lon)
+    };
+  }
+
+  buildDirectionsUrl(destination, origin = null) {
+    const url = new URL("https://www.google.com/maps/dir/");
+    const params = {
+      api: "1",
+      destination: typeof destination === "string" ? destination : `${destination.lat},${destination.lon}`,
+      travelmode: "driving"
+    };
+    if (origin?.lat != null && origin?.lon != null) params.origin = `${origin.lat},${origin.lon}`;
+    url.search = new URLSearchParams(params).toString();
+    return url.toString();
+  }
+
+  async directionsTo(destination) {
+    if (!destination?.trim()) throw new Error("destination-missing");
+    const position = await this.currentPosition();
+    let target = null;
+
+    if (navigator.onLine) {
+      try {
+        target = await this.geocode(destination);
+      } catch {
+        target = null;
+      }
+    }
+
+    if (target) {
+      const distance = distanceMeters(position.lat, position.lon, target.lat, target.lon);
+      return {
+        destinationQuery: destination,
+        destinationName: target.name,
+        target,
+        position,
+        straightDistanceMeters: distance,
+        straightDistanceLabel: readableDistance(distance),
+        mapsUrl: this.buildDirectionsUrl(target, position)
+      };
+    }
+
+    return {
+      destinationQuery: destination,
+      destinationName: destination,
+      target: null,
+      position,
+      straightDistanceMeters: null,
+      straightDistanceLabel: "—",
+      mapsUrl: this.buildDirectionsUrl(destination, position)
+    };
   }
 
   nearestFuel(options = {}) {

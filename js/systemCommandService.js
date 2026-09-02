@@ -100,6 +100,41 @@ const COMMANDS = [
     aliases: ["speak quieter"]
   },
   {
+    id: "open_player",
+    phrase: "Open the player",
+    hint: "ôu-pen dhi plêi-er",
+    description: "Abre o painel de música.",
+    aliases: ["open player", "open de player"]
+  },
+  {
+    id: "open_research",
+    phrase: "Open the research",
+    hint: "ôu-pen dhi ri-sârtch",
+    description: "Abre o painel de pesquisa.",
+    aliases: ["open research", "open de research"]
+  },
+  {
+    id: "open_navigation",
+    phrase: "Open the navigation",
+    hint: "ôu-pen dhi na-vi-gêi-shon",
+    description: "Abre o painel de navegação.",
+    aliases: ["open navigation", "open de navigation"]
+  },
+  {
+    id: "open_lab",
+    phrase: "Open the lab",
+    hint: "ôu-pen dhi léb",
+    description: "Abre o laboratório de física.",
+    aliases: ["open lab", "open de lab"]
+  },
+  {
+    id: "close_panel",
+    phrase: "Close the panel",
+    hint: "clôuz dhi pé-nel",
+    description: "Fecha o painel lateral auxiliar.",
+    aliases: ["close panel", "close de panel"]
+  },
+  {
     id: "clear_chat",
     phrase: "Clear the chat",
     hint: "clír dhi tchét",

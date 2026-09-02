@@ -72,7 +72,12 @@ export class InternetService {
     const searchData = await fetchJson(searchUrl);
     const hit = searchData?.query?.search?.[0];
     if (!hit?.title) return null;
+    return this.fetchWikipediaPage(hit.title, wikiLang);
+  }
 
+  async fetchWikipediaPage(title, language = "pt") {
+    const wikiLang = WIKI_LANG[language] ?? "pt";
+    const base = `https://${wikiLang}.wikipedia.org/w/api.php`;
     const extractUrl = new URL(base);
     extractUrl.search = new URLSearchParams({
       action: "query",
@@ -81,7 +86,7 @@ export class InternetService {
       exintro: "1",
       explaintext: "1",
       redirects: "1",
-      titles: hit.title,
+      titles: title,
       format: "json",
       origin: "*"
     }).toString();
@@ -93,14 +98,45 @@ export class InternetService {
 
     const result = {
       source: "Wikipedia",
-      title: page.title ?? hit.title,
+      title: page.title ?? title,
       text: compactExtract(page.extract),
-      url: page.fullurl ?? `https://${wikiLang}.wikipedia.org/wiki/${encodeURIComponent(hit.title.replace(/ /g, "_"))}`,
+      url: page.fullurl ?? `https://${wikiLang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
       language: wikiLang
     };
-
     this.lastSource = result;
     return result;
+  }
+
+  async research(query, language = "pt", limit = 3) {
+    if (!this.enabled) throw new Error("internet-disabled");
+    if (!this.online) throw new Error("offline");
+
+    const wikiLang = WIKI_LANG[language] ?? "pt";
+    const base = `https://${wikiLang}.wikipedia.org/w/api.php`;
+    const searchUrl = new URL(base);
+    searchUrl.search = new URLSearchParams({
+      action: "query",
+      list: "search",
+      srsearch: query,
+      srlimit: String(Math.max(1, Math.min(5, limit))),
+      format: "json",
+      utf8: "1",
+      origin: "*"
+    }).toString();
+
+    const searchData = await fetchJson(searchUrl);
+    const hits = searchData?.query?.search ?? [];
+    const pages = (await Promise.all(hits.slice(0, limit).map((hit) => this.fetchWikipediaPage(hit.title, wikiLang).catch(() => null))))
+      .filter(Boolean);
+
+    const searchUrlExternal = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+    return {
+      query,
+      language: wikiLang,
+      sources: pages,
+      searchUrl: searchUrlExternal,
+      summary: pages[0]?.text ?? ""
+    };
   }
 
   async answer(query, preferredLanguage = null) {
