@@ -1,0 +1,23 @@
+{
+  "name": "JORDAN - Personal Intelligence",
+  "short_name": "JORDAN",
+  "description": "Assistente pessoal inteligente com memória e calendário próprios.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#020000",
+  "theme_color": "#050000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
