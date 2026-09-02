@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#050000" />
+  <meta name="description" content="JORDAN - assistente pessoal inteligente." />
+  <title>JORDAN</title>
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./assets/icon-192.png" />
+  <link rel="apple-touch-icon" href="./assets/icon-192.png" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <div class="fx-grid"></div>
+  <div class="fx-vignette"></div>
+  <div class="fx-scanlines"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="wordmark" data-view-target="core" aria-label="Abrir núcleo da JORDAN">
+        <span class="wordmark-dot"></span>
+        <span>JORDAN</span>
+        <small>PERSONAL INTELLIGENCE</small>
+      </button>
+
+      <div class="topbar-center">
+        <span class="system-pulse"></span>
+        <span id="topStatus">SYSTEM ONLINE</span>
+      </div>
+
+      <div class="clock-box">
+        <strong id="clock">--:--:--</strong>
+        <span id="todayLabel">--</span>
+      </div>
+    </header>
+
+    <aside class="hud-rail" aria-label="Navegação">
+      <button class="rail-button active" data-view-target="core" title="JORDAN">
+        <span>01</span>
+        <b>CORE</b>
+      </button>
+      <button class="rail-button" data-view-target="calendar" title="Calendário">
+        <span>02</span>
+        <b>CAL</b>
+      </button>
+      <button class="rail-button" data-view-target="memory" title="Memória">
+        <span>03</span>
+        <b>MEM</b>
+      </button>
+      <button class="rail-button" data-view-target="system" title="Sistema">
+        <span>04</span>
+        <b>SYS</b>
+      </button>
+    </aside>
+
+    <main class="views">
+      <section id="view-core" class="view active" data-view="core">
+        <div class="core-layout">
+          <div class="core-stage">
+            <div class="corner-data corner-data-a">
+              <span>VOICE CORE</span>
+              <strong>GOOGLE PT-BR / CHILD-LIKE</strong>
+            </div>
+            <div class="corner-data corner-data-b">
+              <span>MEMORY</span>
+              <strong id="memoryCounter">0 ENTRIES</strong>
+            </div>
+            <div class="corner-data corner-data-c">
+              <span>AGENDA</span>
+              <strong id="todayCountCore">0 TODAY</strong>
+            </div>
+
+            <div class="core-crosshair crosshair-horizontal"></div>
+            <div class="core-crosshair crosshair-vertical"></div>
+
+            <button id="orbButton" class="jordan-core" aria-label="Falar com JORDAN">
+              <span class="voice-wave wave-1"></span>
+              <span class="voice-wave wave-2"></span>
+              <span class="voice-wave wave-3"></span>
+              <span class="voice-wave wave-4"></span>
+
+              <span class="orbit orbit-a"></span>
+              <span class="orbit orbit-b"></span>
+              <span class="orbit orbit-c"></span>
+
+              <span class="symbol-frame">
+                <img src="./assets/jordan-symbol.png" alt="Símbolo da JORDAN" />
+              </span>
+            </button>
+
+            <div class="core-state">
+              <span class="core-state-label">JORDAN</span>
+              <h1 id="assistantStatus">Sistema pronto.</h1>
+              <p id="liveTranscript" class="live-transcript">Toque no símbolo e fale normalmente.</p>
+            </div>
+
+            <div class="core-actions">
+              <button id="micButton" class="hud-button primary">🎙 FALAR</button>
+              <label class="hud-toggle">
+                <input id="alwaysListeningToggle" type="checkbox" />
+                <span class="toggle-track"><i></i></span>
+                <b>MODO “JORDAN”</b>
+              </label>
+              <button id="calendarShortcut" class="hud-button">CALENDÁRIO</button>
+            </div>
+          </div>
+
+          <aside class="next-event-widget">
+            <div class="hud-label">NEXT EVENT</div>
+            <div id="nextEventCard" class="next-event-card empty-state">Nenhum compromisso futuro.</div>
+            <div id="nextEventCountdown" class="countdown">—</div>
+          </aside>
+
+          <section class="chat-console">
+            <div class="chat-header">
+              <div>
+                <span class="hud-label">CONVERSATION CHANNEL</span>
+                <strong>JORDAN / USER</strong>
+              </div>
+              <button id="clearChatButton" class="text-button">LIMPAR TELA</button>
+            </div>
+
+            <div id="conversation" class="conversation" aria-live="polite">
+              <div class="message jordan">
+                <span class="message-author">JORDAN</span>
+                <p>Opa! Tô aqui. Pode falar comigo, me ensinar coisas, conversar sobre anime ou usar minha agenda.</p>
+              </div>
+            </div>
+
+            <form id="commandForm" class="command-dock">
+              <span class="prompt-mark">›</span>
+              <input
+                id="commandInput"
+                autocomplete="off"
+                placeholder="Fale ou escreva qualquer coisa para JORDAN..."
+              />
+              <button type="submit" class="send-button">ENVIAR</button>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      <section id="view-calendar" class="view" data-view="calendar">
+        <div class="view-header">
+          <div>
+            <span class="hud-label">JORDAN INTERNAL CALENDAR</span>
+            <h2>Calendário</h2>
+            <p>Esta agenda pertence à própria JORDAN e fica salva na memória local.</p>
+          </div>
+          <button id="newEventButton" class="hud-button primary">+ NOVO COMPROMISSO</button>
+        </div>
+
+        <div class="calendar-dashboard">
+          <article class="hud-panel calendar-summary">
+            <span class="hud-label">HOJE</span>
+            <div class="summary-number" id="todayCount">0</div>
+            <p>compromissos</p>
+            <div id="todayEvents" class="mini-event-list">
+              <div class="empty-state">Sem compromissos hoje.</div>
+            </div>
+          </article>
+
+          <article class="hud-panel agenda-panel">
+            <div class="panel-toolbar">
+              <div>
+                <span class="hud-label">TIMELINE</span>
+                <h3>Agenda da JORDAN</h3>
+              </div>
+              <div class="agenda-filters">
+                <input id="searchInput" type="search" placeholder="Buscar..." />
+                <select id="periodFilter">
+                  <option value="upcoming">Próximos</option>
+                  <option value="today">Hoje</option>
+                  <option value="week">7 dias</option>
+                  <option value="all">Todos</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="agendaEvents" class="event-list">
+              <div class="empty-state">A agenda está vazia.</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-memory" class="view" data-view="memory">
+        <div class="view-header">
+          <div>
+            <span class="hud-label">ADAPTIVE PERSONAL MEMORY</span>
+            <h2>Memória</h2>
+            <p>Ensine fatos e preferências por voz ou texto. Você pode apagar qualquer item.</p>
+          </div>
+        </div>
+
+        <div class="memory-grid">
+          <article class="hud-panel memory-info-panel">
+            <span class="hud-label">HOW TO TEACH</span>
+            <h3>Ela aprende conversando</h3>
+            <div class="example-lines">
+              <button data-command="Jordan, eu moro em Tijucas">“Eu moro em Tijucas”</button>
+              <button data-command="Jordan, meu nome é Jhuan">“Meu nome é Jhuan”</button>
+              <button data-command="Jordan, eu gosto de anime">“Eu gosto de anime”</button>
+              <button data-command="Jordan, fale com gírias">“Fale com gírias”</button>
+              <button data-command="Jordan, fique mais formal">“Fique mais formal”</button>
+            </div>
+            <p class="privacy-note">Nesta versão, essas informações ficam somente no armazenamento local do navegador deste dispositivo.</p>
+          </article>
+
+          <article class="hud-panel memory-list-panel">
+            <div class="panel-toolbar">
+              <div>
+                <span class="hud-label">LEARNED DATA</span>
+                <h3>O que JORDAN lembra</h3>
+              </div>
+              <span id="memoryCount" class="hud-badge">0</span>
+            </div>
+            <div id="memoryList" class="memory-list">
+              <div class="empty-state">A memória ainda está vazia.</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="view-system" class="view" data-view="system">
+        <div class="view-header">
+          <div>
+            <span class="hud-label">SYSTEM CONTROL</span>
+            <h2>Sistema</h2>
+            <p>Estado da voz, memória, PWA e alertas.</p>
+          </div>
+        </div>
+
+        <div class="system-grid">
+          <article class="hud-panel system-card">
+            <span>MEMÓRIA LOCAL</span>
+            <strong id="dbStatus">Iniciando...</strong>
+          </article>
+          <article class="hud-panel system-card">
+            <span>RECONHECIMENTO DE VOZ</span>
+            <strong id="speechRecognitionStatus">Verificando...</strong>
+          </article>
+          <article class="hud-panel system-card voice-card">
+            <span>VOZ DA JORDAN</span>
+            <strong id="speechSynthesisStatus">Verificando...</strong>
+            <select id="voiceSelect" aria-label="Escolher voz da JORDAN">
+              <option value="">Google PT-BR feminina / infantil (automático)</option>
+            </select>
+            <button id="testVoiceButton" class="hud-button small">TESTAR VOZ</button>
+          </article>
+          <article class="hud-panel system-card personality-card">
+            <span>PERSONALIDADE</span>
+            <strong>Comportamento da JORDAN</strong>
+            <select id="personalitySelect" aria-label="Personalidade da JORDAN">
+              <option value="extroverted">Extrovertida</option>
+              <option value="introverted">Introvertida</option>
+              <option value="balanced">Equilibrada</option>
+              <option value="playful">Brincalhona</option>
+              <option value="professional">Profissional</option>
+            </select>
+            <p id="personalityDescription" class="system-description">Falante, rápida e espontânea.</p>
+          </article>
+          <article class="hud-panel system-card">
+            <span>PWA / OFFLINE</span>
+            <strong id="pwaStatus">Verificando...</strong>
+          </article>
+          <article class="hud-panel system-card">
+            <span>ALERTAS</span>
+            <strong id="notificationStatus">Verificando...</strong>
+            <button id="notificationButton" class="hud-button small">ATIVAR ALERTAS</button>
+          </article>
+          <article class="hud-panel system-card">
+            <span>BACKUP</span>
+            <strong>Agenda + memória</strong>
+            <div class="backup-actions">
+              <button id="exportButton" class="hud-button small">EXPORTAR</button>
+              <label class="hud-button small file-button">
+                IMPORTAR
+                <input id="importInput" type="file" accept="application/json" />
+              </label>
+            </div>
+          </article>
+        </div>
+
+        <button id="installButton" class="hud-button primary hidden">INSTALAR JORDAN COMO APP</button>
+      </section>
+    </main>
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <dialog id="eventDialog">
+    <form id="eventForm" method="dialog" class="event-form">
+      <div class="dialog-header">
+        <div>
+          <span class="hud-label">JORDAN CALENDAR</span>
+          <h2 id="eventDialogTitle">Novo compromisso</h2>
+        </div>
+        <button id="closeDialogButton" type="button" class="icon-button">×</button>
+      </div>
+
+      <input id="eventId" type="hidden" />
+
+      <label>
+        Título
+        <input id="eventTitle" required maxlength="120" placeholder="Dentista" />
+      </label>
+
+      <div class="form-grid">
+        <label>
+          Data
+          <input id="eventDate" type="date" required />
+        </label>
+        <label>
+          Hora
+          <input id="eventTime" type="time" required />
+        </label>
+      </div>
+
+      <label>
+        Duração
+        <select id="eventDuration">
+          <option value="15">15 minutos</option>
+          <option value="30">30 minutos</option>
+          <option value="45">45 minutos</option>
+          <option value="60" selected>1 hora</option>
+          <option value="90">1h30</option>
+          <option value="120">2 horas</option>
+          <option value="180">3 horas</option>
+          <option value="240">4 horas</option>
+          <option value="480">8 horas</option>
+        </select>
+      </label>
+
+      <label>
+        Observações
+        <textarea id="eventDescription" rows="4" maxlength="500" placeholder="Opcional"></textarea>
+      </label>
+
+      <div class="dialog-actions">
+        <button id="deleteEventButton" type="button" class="danger-button hidden">EXCLUIR</button>
+        <span class="dialog-spacer"></span>
+        <button id="cancelEventButton" type="button" class="hud-button">CANCELAR</button>
+        <button type="submit" class="hud-button primary">SALVAR</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="emergencyDialog" class="emergency-dialog">
+    <div class="emergency-panel">
+      <div class="dialog-header">
+        <div>
+          <span class="hud-label">PRIORITY ASSIST</span>
+          <h2>Ajuda rápida</h2>
+        </div>
+        <button id="closeEmergencyButton" type="button" class="icon-button">×</button>
+      </div>
+
+      <div class="emergency-radar" aria-hidden="true">
+        <span></span><span></span><span></span>
+        <strong>!</strong>
+      </div>
+
+      <p class="emergency-copy">A JORDAN não realiza ligações sozinha. O usuário sempre confirma tocando no botão.</p>
+      <div id="emergencyNumber" class="emergency-number">190</div>
+      <a id="emergencyCallLink" class="emergency-call-button" href="tel:190">LIGAR PARA 190</a>
+      <p class="emergency-hint">Você pode mudar por voz: “Jordan, defina meu número de ajuda como 999999999”.</p>
+    </div>
+  </dialog>
+
+  <dialog id="tutorialDialog" class="tutorial-dialog">
+    <div class="tutorial-panel">
+      <div class="dialog-header">
+        <div>
+          <span class="hud-label">JORDAN CAPABILITIES</span>
+          <h2>O que eu posso fazer?</h2>
+        </div>
+        <button id="closeTutorialButton" type="button" class="icon-button">×</button>
+      </div>
+
+      <div class="tutorial-grid">
+        <section>
+          <span>AGENDA</span>
+          <p>“Jordan, marque dentista amanhã às 6.”</p>
+          <p>“O que tenho amanhã?”</p>
+          <p>“Quais horários livres tenho sexta?”</p>
+          <p>“Adie dentista para 16h.”</p>
+        </section>
+        <section>
+          <span>MEMÓRIA</span>
+          <p>“Eu moro em Tijucas.”</p>
+          <p>“Meu número de telefone é...”</p>
+          <p>“O que você sabe sobre mim?”</p>
+          <p>“Esqueça minha cidade.”</p>
+        </section>
+        <section>
+          <span>PERSONALIDADE</span>
+          <p>“Seja extrovertida.”</p>
+          <p>“Seja introvertida.”</p>
+          <p>“Fale com gírias.”</p>
+          <p>“Fique mais formal.”</p>
+        </section>
+        <section>
+          <span>CONVERSA</span>
+          <p>“Vamos conversar.”</p>
+          <p>“Vou te contar uma história.”</p>
+          <p>“Conte uma história.”</p>
+          <p>“Qual é a fruta do Luffy?”</p>
+        </section>
+        <section>
+          <span>SISTEMA</span>
+          <p>“Onde eu altero sua voz?”</p>
+          <p>“Abra seu calendário.”</p>
+          <p>“Você tem internet?”</p>
+          <p>“Como faço backup?”</p>
+        </section>
+        <section>
+          <span>AJUDA</span>
+          <p>“Ajuda” abre o painel de ligação.</p>
+          <p>Polícia: 190 · SAMU: 192 · Bombeiros: 193.</p>
+          <p>O número prioritário pode ser alterado por comando.</p>
+        </section>
+      </div>
+
+      <div class="tutorial-footer">Dica: no modo contínuo, diga “Jordan” antes do comando. Depois de 2 segundos de silêncio, eu processo a frase.</div>
+    </div>
+  </dialog>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
