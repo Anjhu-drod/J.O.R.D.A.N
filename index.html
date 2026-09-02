@@ -61,7 +61,7 @@
           <div class="core-stage">
             <div class="corner-data corner-data-a">
               <span>VOICE CORE</span>
-              <strong>FEMININE / PT-BR</strong>
+              <strong>GOOGLE PT-BR / CHILD-LIKE</strong>
             </div>
             <div class="corner-data corner-data-b">
               <span>MEMORY</span>
@@ -125,7 +125,7 @@
             <div id="conversation" class="conversation" aria-live="polite">
               <div class="message jordan">
                 <span class="message-author">JORDAN</span>
-                <p>Estou aqui. Você pode conversar comigo, me ensinar coisas ou usar minha agenda.</p>
+                <p>Opa! Tô aqui. Pode falar comigo, me ensinar coisas, conversar sobre anime ou usar minha agenda.</p>
               </div>
             </div>
 
@@ -246,9 +246,21 @@
             <span>VOZ DA JORDAN</span>
             <strong id="speechSynthesisStatus">Verificando...</strong>
             <select id="voiceSelect" aria-label="Escolher voz da JORDAN">
-              <option value="">Automática feminina PT-BR</option>
+              <option value="">Google PT-BR feminina / infantil (automático)</option>
             </select>
             <button id="testVoiceButton" class="hud-button small">TESTAR VOZ</button>
+          </article>
+          <article class="hud-panel system-card personality-card">
+            <span>PERSONALIDADE</span>
+            <strong>Comportamento da JORDAN</strong>
+            <select id="personalitySelect" aria-label="Personalidade da JORDAN">
+              <option value="extroverted">Extrovertida</option>
+              <option value="introverted">Introvertida</option>
+              <option value="balanced">Equilibrada</option>
+              <option value="playful">Brincalhona</option>
+              <option value="professional">Profissional</option>
+            </select>
+            <p id="personalityDescription" class="system-description">Falante, rápida e espontânea.</p>
           </article>
           <article class="hud-panel system-card">
             <span>PWA / OFFLINE</span>
@@ -334,6 +346,86 @@
         <button type="submit" class="hud-button primary">SALVAR</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="emergencyDialog" class="emergency-dialog">
+    <div class="emergency-panel">
+      <div class="dialog-header">
+        <div>
+          <span class="hud-label">PRIORITY ASSIST</span>
+          <h2>Ajuda rápida</h2>
+        </div>
+        <button id="closeEmergencyButton" type="button" class="icon-button">×</button>
+      </div>
+
+      <div class="emergency-radar" aria-hidden="true">
+        <span></span><span></span><span></span>
+        <strong>!</strong>
+      </div>
+
+      <p class="emergency-copy">A JORDAN não realiza ligações sozinha. O usuário sempre confirma tocando no botão.</p>
+      <div id="emergencyNumber" class="emergency-number">190</div>
+      <a id="emergencyCallLink" class="emergency-call-button" href="tel:190">LIGAR PARA 190</a>
+      <p class="emergency-hint">Você pode mudar por voz: “Jordan, defina meu número de ajuda como 999999999”.</p>
+    </div>
+  </dialog>
+
+  <dialog id="tutorialDialog" class="tutorial-dialog">
+    <div class="tutorial-panel">
+      <div class="dialog-header">
+        <div>
+          <span class="hud-label">JORDAN CAPABILITIES</span>
+          <h2>O que eu posso fazer?</h2>
+        </div>
+        <button id="closeTutorialButton" type="button" class="icon-button">×</button>
+      </div>
+
+      <div class="tutorial-grid">
+        <section>
+          <span>AGENDA</span>
+          <p>“Jordan, marque dentista amanhã às 6.”</p>
+          <p>“O que tenho amanhã?”</p>
+          <p>“Quais horários livres tenho sexta?”</p>
+          <p>“Adie dentista para 16h.”</p>
+        </section>
+        <section>
+          <span>MEMÓRIA</span>
+          <p>“Eu moro em Tijucas.”</p>
+          <p>“Meu número de telefone é...”</p>
+          <p>“O que você sabe sobre mim?”</p>
+          <p>“Esqueça minha cidade.”</p>
+        </section>
+        <section>
+          <span>PERSONALIDADE</span>
+          <p>“Seja extrovertida.”</p>
+          <p>“Seja introvertida.”</p>
+          <p>“Fale com gírias.”</p>
+          <p>“Fique mais formal.”</p>
+        </section>
+        <section>
+          <span>CONVERSA</span>
+          <p>“Vamos conversar.”</p>
+          <p>“Vou te contar uma história.”</p>
+          <p>“Conte uma história.”</p>
+          <p>“Qual é a fruta do Luffy?”</p>
+        </section>
+        <section>
+          <span>SISTEMA</span>
+          <p>“Onde eu altero sua voz?”</p>
+          <p>“Abra seu calendário.”</p>
+          <p>“Você tem internet?”</p>
+          <p>“Como faço backup?”</p>
+        </section>
+        <section>
+          <span>AJUDA</span>
+          <p>“Ajuda” abre o painel de ligação.</p>
+          <p>Polícia: 190 · SAMU: 192 · Bombeiros: 193.</p>
+          <p>O número prioritário pode ser alterado por comando.</p>
+        </section>
+      </div>
+
+      <div class="tutorial-footer">Dica: no modo contínuo, diga “Jordan” antes do comando. Depois de 2 segundos de silêncio, eu processo a frase.</div>
+    </div>
   </dialog>
 
   <script type="module" src="./js/app.js"></script>
