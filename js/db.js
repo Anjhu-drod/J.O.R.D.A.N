@@ -153,9 +153,9 @@ export async function exportMemory() {
     memories: await getAllMemories(),
     settings: {
       voiceEnabled: await getSetting("voiceEnabled", true),
-      alwaysListening: await getSetting("alwaysListening", false),
+      alwaysListening: await getSetting("alwaysListening", true),
       assistantVolume: await getSetting("assistantVolume", 1),
-      preferredVoiceName: await getSetting("preferredVoiceName", "")
+      languageMode: await getSetting("languageMode", "pt")
     }
   };
 }

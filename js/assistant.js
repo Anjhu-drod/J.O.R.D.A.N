@@ -14,7 +14,6 @@ import { answerAnimeQuestion, answerSystemQuestion, getAnimeCuriosity, isLikelyA
 import { getPersonality } from "./personalityService.js";
 import {
   correctSpeechTranscript,
-  detectLanguage,
   removeWakeWord
 } from "./languageService.js";
 import { analyzeSemanticIntent } from "./semanticLexicon.js";
@@ -48,6 +47,8 @@ export class JordanAssistant {
   }
 
   async initialize() {
+    await this.memory.ensureCoreMemories?.();
+
     const styleMemory = await this.memory.get("preference.speechStyle");
     const personalityMemory = await this.memory.get("preference.personality");
     const helpNumberMemory = await this.memory.get("preference.helpNumber");
@@ -72,6 +73,10 @@ export class JordanAssistant {
     return getPersonality(this.personality);
   }
 
+  setResponseLanguage(language = "pt") {
+    this.context.responseLanguage = ["pt", "en", "es", "ja"].includes(language) ? language : "pt";
+  }
+
   async getHelpNumber() {
     return await this.memory.getPreference("helpNumber", "190");
   }
@@ -83,10 +88,16 @@ export class JordanAssistant {
   async execute(rawInput) {
     const raw = String(rawInput || "").trim();
     const original = correctSpeechTranscript(raw, { animeContext: isLikelyAnimeTopic(raw) });
-    const language = detectLanguage(original, "pt");
-    this.context.responseLanguage = language;
+    // V0.5: idioma é uma configuração explícita; não mudamos de idioma por uma frase parecida.
+    const language = this.context.responseLanguage || "pt";
 
-    if (/^(?:hi|hello|hey|hola|oi|ola|olá|konnichiwa|ohayo|ohayou|konbanwa)\s+jordan[!.?。！？]*$/i.test(original.trim())) {
+    const greetingPatterns = {
+      pt: /^(?:oi|ola|olá|opa)\s+jordan[!.?]*$/i,
+      en: /^(?:hi|hello|hey)\s+jordan[!.?]*$/i,
+      es: /^(?:hola|buenas)\s+jordan[!.?]*$/i,
+      ja: /^(?:konnichiwa|ohayo|ohayou|konbanwa)\s+jordan[!.?。！？]*$/i
+    };
+    if ((greetingPatterns[language] ?? greetingPatterns.pt).test(original.trim())) {
       return this.greeting(language);
     }
 
@@ -105,6 +116,9 @@ export class JordanAssistant {
     const favoriteConversation = await this.tryFavoriteConversation(original, text);
     if (favoriteConversation) return favoriteConversation;
 
+    const creatorProtection = await this.tryCreatorProtection(text);
+    if (creatorProtection) return creatorProtection;
+
     const personalityTeaching = await this.tryTeachPersonality(original, text);
     if (personalityTeaching) return personalityTeaching;
 
@@ -116,6 +130,9 @@ export class JordanAssistant {
 
     const memoryQuery = await this.tryMemoryQuery(original, text);
     if (memoryQuery) return memoryQuery;
+
+    const creatorAnswer = await this.tryCreatorQuestion(text);
+    if (creatorAnswer) return creatorAnswer;
 
     const story = await this.tryStoryIntent(original, text);
     if (story) return story;
@@ -157,7 +174,13 @@ export class JordanAssistant {
       return this.response(animeAnswer.answer, { topic: "anime", mood: "excited" });
     }
 
-    if (this.isGreeting(text) || /^(hi|hello|hey|hola|konnichiwa|ohayo|ohayou|konbanwa)\b/.test(text)) {
+    const languageGreeting = {
+      pt: /^(oi|ola|opa|bom dia|boa tarde|boa noite)\b/,
+      en: /^(hi|hello|hey|good morning|good afternoon|good evening)\b/,
+      es: /^(hola|buenas|buenos dias|buenas tardes|buenas noches)\b/,
+      ja: /^(konnichiwa|ohayo|ohayou|konbanwa)\b/
+    };
+    if ((languageGreeting[language] ?? languageGreeting.pt).test(text)) {
       return this.greeting(language);
     }
 
@@ -194,14 +217,16 @@ export class JordanAssistant {
 
   response(text, extra = {}) {
     const requestedLanguage = this.context.responseLanguage ?? "pt";
-    const language = extra.language ?? (requestedLanguage === "pt" ? "pt" : detectLanguage(String(text ?? ""), requestedLanguage));
+    const language = extra.language ?? requestedLanguage;
     let styled = String(text ?? "");
     if (language === "pt") styled = this.applySpeechStyle(styled);
     styled = this.applyPersonalityStyle(styled, extra);
 
+    const speakText = extra.speak ? String(extra.speak) : styled;
+
     return {
       text: styled,
-      speak: styled,
+      speak: speakText,
       understood: true,
       personality: this.personality,
       language,
@@ -431,6 +456,42 @@ export class JordanAssistant {
     );
   }
 
+
+  async tryCreatorProtection(text) {
+    const redefinition =
+      /\b(seu|teu) criador\s+(e|eh)\s+.+/.test(text) ||
+      /\b(mude|troque|altere|substitua)\b.*\b(seu criador|teu criador|criador da jordan)\b/.test(text) ||
+      /\b(esqueca|esquece|apague|remova)\b.*\b(seu criador|teu criador|criador da jordan)\b/.test(text);
+
+    if (!redefinition) return null;
+
+    return this.response(
+      "Essa informação faz parte do meu núcleo. Meu criador continua sendo Jhuan, pronunciado Ruan, e essa memória não pode ser substituída nem apagada por comandos normais.",
+      {
+        casual: true,
+        mood: "serious",
+        speak: "Essa informação faz parte do meu núcleo. Meu criador continua sendo Ruan, e essa memória não pode ser alterada por comandos normais."
+      }
+    );
+  }
+
+  async tryCreatorQuestion(text) {
+    if (!/\b(quem te criou|quem criou voce|quem e seu criador|qual e seu criador|qual o nome do seu criador|quem e o criador da jordan|quem fez voce|quem fez a jordan|seu criador)\b/.test(text)) {
+      return null;
+    }
+
+    const creator = await this.memory.getCreator?.();
+    const displayName = creator?.value || "Jhuan";
+    const spokenName = creator?.pronunciation || creator?.spokenValue || "Ruan";
+
+    return this.response(
+      `Meu criador é ${displayName}. O nome dele se pronuncia ${spokenName}. Essa é uma memória central protegida.`,
+      {
+        casual: true,
+        speak: `Meu criador é ${spokenName}. Essa é uma memória central protegida.`
+      }
+    );
+  }
 
   async tryFavoriteConversation(original, text) {
     const clean = removeWakeWord(original).trim();
@@ -838,7 +899,10 @@ export class JordanAssistant {
       const query = this.cleanLearnedValue(forgetMatch[1]);
       const matches = await this.memory.find(query);
       if (!matches.length) return this.response("Não achei essa informação na minha memória.");
-      await this.memory.forget(matches[0].id);
+      const removed = await this.memory.forget(matches[0].id);
+      if (!removed) {
+        return this.response("Essa informação faz parte do meu núcleo e não pode ser apagada por um comando normal.", { mood: "serious" });
+      }
       return this.response(`Esqueci a informação “${matches[0].label}”.`, { refreshMemory: true });
     }
 

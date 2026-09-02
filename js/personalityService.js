@@ -7,7 +7,7 @@ export const PERSONALITIES = {
     idleMinMs: 26000,
     idleMaxMs: 42000,
     idlePrompts: [
-      "Ei, tô por aqui! Se quiser começar, é só falar Jordan e mandar o comando.",
+      "Ei, tô por aqui! Se quiser começar, é só falar comigo.",
       "Silêncio suspeito por aqui... quer organizar alguma coisa ou conversar um pouco?",
       "Pode falar comigo, viu? Agenda, memória, anime, história... manda aí.",
       "Tô esperando você inventar alguma missão pra mim!",
@@ -31,7 +31,7 @@ export const PERSONALITIES = {
     idleMinMs: 70000,
     idleMaxMs: 110000,
     idlePrompts: [
-      "Se precisar de mim, é só chamar.",
+      "Se precisar de mim, é só falar.",
       "Ainda estou aqui. Quer continuar?"
     ]
   },

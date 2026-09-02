@@ -61,7 +61,7 @@
           <div class="core-stage">
             <div class="corner-data corner-data-a">
               <span>VOICE / LANGUAGE CORE</span>
-              <strong id="coreLanguageStatus">AUTO · PT / EN / ES / JA</strong>
+              <strong id="coreLanguageStatus">PT-BR · FIXED</strong>
             </div>
             <div class="corner-data corner-data-b">
               <span>MEMORY</span>
@@ -93,15 +93,15 @@
             <div class="core-state">
               <span class="core-state-label">JORDAN</span>
               <h1 id="assistantStatus">Sistema pronto.</h1>
-              <p id="liveTranscript" class="live-transcript">Toque no símbolo e fale normalmente.</p>
+              <p id="liveTranscript" class="live-transcript">Áudio contínuo: fale normalmente. Comandos do sistema são em inglês.</p>
             </div>
 
             <div class="core-actions">
               <button id="micButton" class="hud-button primary">🎙 FALAR</button>
               <label class="hud-toggle">
-                <input id="alwaysListeningToggle" type="checkbox" />
+                <input id="alwaysListeningToggle" type="checkbox" checked />
                 <span class="toggle-track"><i></i></span>
-                <b>MODO “JORDAN”</b>
+                <b>ÁUDIO CONTÍNUO</b>
               </label>
               <button id="calendarShortcut" class="hud-button">CALENDÁRIO</button>
             </div>
@@ -191,7 +191,7 @@
           <div>
             <span class="hud-label">ADAPTIVE PERSONAL MEMORY</span>
             <h2>Memória</h2>
-            <p>Ensine fatos e preferências por voz ou texto. Você pode apagar qualquer item.</p>
+            <p>Ensine fatos e preferências por voz ou texto. Memórias comuns podem ser apagadas; memórias CORE ficam protegidas.</p>
           </div>
         </div>
 
@@ -229,7 +229,7 @@
           <div>
             <span class="hud-label">SYSTEM CONTROL</span>
             <h2>Sistema</h2>
-            <p>Estado da voz, idiomas, internet, memória, localização, PWA e alertas.</p>
+            <p>Voz, idioma manual, comandos em inglês, internet, memória, localização, PWA e alertas.</p>
           </div>
         </div>
 
@@ -243,11 +243,9 @@
             <strong id="speechRecognitionStatus">Verificando...</strong>
           </article>
           <article class="hud-panel system-card voice-card">
-            <span>VOZ DA JORDAN</span>
-            <strong id="speechSynthesisStatus">Verificando...</strong>
-            <select id="voiceSelect" aria-label="Escolher voz da JORDAN">
-              <option value="">Google PT-BR feminina / infantil (automático)</option>
-            </select>
+            <span>VOICE PROFILE</span>
+            <strong id="speechSynthesisStatus">JORDAN Spark · PT-BR</strong>
+            <p class="system-description">Perfil original jovem, agudo, rápido e expressivo. A prosódia é definida pela JORDAN; o timbre-base ainda depende do sintetizador disponível até integrarmos um modelo neural próprio.</p>
             <button id="testVoiceButton" class="hud-button small">TESTAR VOZ</button>
           </article>
           <article class="hud-panel system-card personality-card">
@@ -263,16 +261,15 @@
             <p id="personalityDescription" class="system-description">Falante, rápida e espontânea.</p>
           </article>
           <article class="hud-panel system-card language-card">
-            <span>IDIOMAS / MICROFONE</span>
-            <strong id="languageStatus">AUTO · Português base</strong>
+            <span>IDIOMA / MICROFONE</span>
+            <strong id="languageStatus">PT-BR · MANUAL</strong>
             <select id="languageModeSelect" aria-label="Idioma de reconhecimento da JORDAN">
-              <option value="auto">Automático · PT / EN / ES / JA</option>
-              <option value="pt">Português · Brasil</option>
+              <option value="pt" selected>Português · Brasil</option>
               <option value="en">English · US</option>
               <option value="es">Español</option>
               <option value="ja">日本語</option>
             </select>
-            <p class="system-description">No automático, a JORDAN detecta a língua da frase e ajusta a próxima rodada de escuta.</p>
+            <p class="system-description">Sem troca automática de idioma. O idioma só muda aqui nas configurações. Nomes próprios estrangeiros continuam aceitos.</p>
           </article>
           <article class="hud-panel system-card">
             <span>INTERNET CORE</span>
@@ -317,6 +314,17 @@
                 <input id="importInput" type="file" accept="application/json" />
               </label>
             </div>
+          </article>
+
+          <article class="hud-panel system-command-panel">
+            <div class="panel-toolbar">
+              <div>
+                <span class="hud-label">ENGLISH SYSTEM COMMANDS</span>
+                <h3>Comandos do sistema</h3>
+                <p class="system-description">Conversas e pedidos normais ficam no idioma escolhido. Ações de sistema usam frases curtas em inglês para reduzir ativações acidentais. Use o botão de pronúncia para treinar.</p>
+              </div>
+            </div>
+            <div id="systemCommandList" class="system-command-list"></div>
           </article>
         </div>
 

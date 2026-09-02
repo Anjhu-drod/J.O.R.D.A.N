@@ -1,7 +1,6 @@
 import { normalizeText } from "./utils.js";
 
 export const SUPPORTED_LANGUAGES = {
-  auto: { id: "auto", label: "Automático · PT / EN / ES / JA", locale: "pt-BR", short: "AUTO" },
   pt: { id: "pt", label: "Português (Brasil)", locale: "pt-BR", short: "PT" },
   en: { id: "en", label: "English (US)", locale: "en-US", short: "EN" },
   es: { id: "es", label: "Español", locale: "es-ES", short: "ES" },
@@ -133,14 +132,21 @@ export function correctSpeechTranscript(text = "", { animeContext = false } = {}
   return result.replace(/\s+/g, " ").trim();
 }
 
-export function scoreRecognitionCandidate(text = "", confidence = 0, { animeContext = false } = {}) {
+export function scoreRecognitionCandidate(text = "", confidence = 0, { animeContext = false, language = "pt" } = {}) {
   const corrected = correctSpeechTranscript(text, { animeContext });
   const normalized = normalizeText(corrected);
   let score = Number.isFinite(confidence) ? confidence * 10 : 0;
 
-  if (containsWakeWord(corrected)) score += 7;
   if (ANIME_CONTEXT.test(corrected)) score += 3;
-  if (/\b(marque|agenda|calendar|schedule|remember|lembre|hola|hello|hi|gas station|posto|anime|personagem|favorite|favorito)\b/i.test(corrected)) score += 2;
+
+  const markers = {
+    pt: /\b(marque|agenda|calendario|lembre|posto|anime|personagem|favorito|favorita|onde|como|qual|quero|tenho)\b/i,
+    en: /\b(schedule|calendar|remember|anime|character|favorite|where|how|what|want|have)\b/i,
+    es: /\b(agenda|calendario|recuerda|anime|personaje|favorito|donde|como|que|quiero|tengo)\b/i,
+    ja: /(?:アニメ|予定|カレンダー|どこ|何|誰|好き)/
+  };
+
+  if ((markers[language] ?? markers.pt).test(corrected)) score += 2;
   if (normalized.length > 2) score += Math.min(2, normalized.split(/\s+/).length * 0.15);
   if (/^(uh|um|hum|hmm|ah|a|o)$/i.test(normalized)) score -= 4;
 

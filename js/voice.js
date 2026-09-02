@@ -1,11 +1,17 @@
 import {
-  SUPPORTED_LANGUAGES,
-  containsWakeWord,
   correctSpeechTranscript,
-  detectLanguage,
   localeForLanguage,
   pickBestRecognitionAlternative
 } from "./languageService.js";
+import {
+  isImmediateStopCommand,
+  systemCommandScore
+} from "./systemCommandService.js";
+import {
+  JORDAN_VOICE_PROFILE,
+  buildJordanProsody,
+  chooseJordanBaseVoice
+} from "./jordanVoiceProfile.js";
 
 export class VoiceService {
   constructor({
@@ -14,7 +20,6 @@ export class VoiceService {
     onStatusChange,
     onListeningChange,
     onSpeakingChange,
-    onLanguageDetected,
     silenceMs = 2000
   } = {}) {
     this.onTranscript = onTranscript ?? (() => {});
@@ -22,7 +27,6 @@ export class VoiceService {
     this.onStatusChange = onStatusChange ?? (() => {});
     this.onListeningChange = onListeningChange ?? (() => {});
     this.onSpeakingChange = onSpeakingChange ?? (() => {});
-    this.onLanguageDetected = onLanguageDetected ?? (() => {});
     this.silenceMs = silenceMs;
 
     this.Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -32,22 +36,18 @@ export class VoiceService {
     this.alwaysListening = false;
     this.manualStop = false;
     this.isSpeaking = false;
+    this.dispatching = false;
     this.restartTimer = null;
     this.silenceTimer = null;
     this.pendingTranscript = "";
-    this.lastDisplayedTranscript = "";
-    this.dispatching = false;
-    this.wakeArmedUntil = 0;
-    this.bargeWakeArmedUntil = 0;
-    this.preferredVoiceName = null;
     this.currentSpeechText = "";
     this.speechToken = 0;
     this.audioContext = null;
 
-    this.languageMode = "auto";
+    // O idioma NÃO é mais detectado automaticamente. PT-BR é o padrão e só
+    // muda quando o usuário escolhe outro idioma nas configurações.
+    this.languageMode = "pt";
     this.currentLanguage = "pt";
-    this.autoLocaleIndex = 0;
-    this.autoLanguages = ["pt", "en", "es", "ja"];
 
     this.synthesisSupported =
       "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
@@ -57,14 +57,16 @@ export class VoiceService {
     return Boolean(this.Recognition);
   }
 
-  setLanguageMode(mode = "auto") {
-    this.languageMode = SUPPORTED_LANGUAGES[mode] ? mode : "auto";
-    if (this.languageMode !== "auto") this.currentLanguage = this.languageMode;
+  setLanguageMode(mode = "pt") {
+    const allowed = ["pt", "en", "es", "ja"];
+    const next = allowed.includes(mode) ? mode : "pt";
+    this.languageMode = next;
+    this.currentLanguage = next;
     this.rebuildRecognition();
   }
 
   getRecognitionLanguage() {
-    return this.languageMode === "auto" ? this.currentLanguage : this.languageMode;
+    return this.currentLanguage || "pt";
   }
 
   getRecognitionLocale() {
@@ -72,19 +74,30 @@ export class VoiceService {
   }
 
   rebuildRecognition() {
-    const wasListening = this.listening;
+    const shouldResume = this.alwaysListening && !this.manualStop;
     if (this.recognition && this.listening) {
       try { this.recognition.stop(); } catch {}
     }
     this.recognition = null;
-    if (wasListening && !this.manualStop) this.scheduleRestart(220);
+    if (shouldResume) this.scheduleRestart(250);
   }
 
-  rotateAutoLocale() {
-    if (this.languageMode !== "auto") return;
-    this.autoLocaleIndex = (this.autoLocaleIndex + 1) % this.autoLanguages.length;
-    this.currentLanguage = this.autoLanguages[this.autoLocaleIndex];
-    this.recognition = null;
+  chooseRecognitionAlternative(result) {
+    if (!result?.length) return { text: "", score: -Infinity };
+
+    const candidates = [];
+    for (let index = 0; index < result.length; index++) {
+      const alt = result[index];
+      const base = pickBestRecognitionAlternative({ 0: alt, length: 1 }, { animeContext: true, language: this.currentLanguage });
+      const commandBonus = systemCommandScore(alt?.transcript || "");
+      candidates.push({
+        text: base.text || alt?.transcript || "",
+        score: (base.score || 0) + commandBonus,
+        confidence: alt?.confidence || 0
+      });
+    }
+
+    return candidates.sort((a, b) => b.score - a.score)[0] || { text: "", score: -Infinity };
   }
 
   configureRecognition() {
@@ -101,40 +114,21 @@ export class VoiceService {
       this.dispatching = false;
       this.playListenClick();
       this.onListeningChange(true);
-      const langLabel = this.languageMode === "auto" ? `AUTO/${this.currentLanguage.toUpperCase()}` : this.currentLanguage.toUpperCase();
       this.onStatusChange(
         this.alwaysListening
-          ? `Escuta ativa · ${langLabel}. Diga “Jordan” e fale normalmente.`
-          : `Estou ouvindo · ${langLabel}...`
+          ? `Áudio ativo · ${this.getRecognitionLocale()}. Pode falar normalmente.`
+          : `Estou ouvindo · ${this.getRecognitionLocale()}...`
       );
     };
 
     recognition.onresult = (event) => {
-      let transcript = "";
-      let animeContext = false;
-
-      for (let i = 0; i < event.results.length; i++) {
-        const chosen = pickBestRecognitionAlternative(event.results[i], { animeContext });
-        if (chosen.text) {
-          transcript += `${chosen.text} `;
-          animeContext = animeContext || /\b(anime|luffy|lucy|zoro|naruto|sasuke|itachi|jiraiya|gon|killua|fruta|haki|nen)\b/i.test(chosen.text);
-        }
-      }
-
-      transcript = correctSpeechTranscript(transcript.trim(), { animeContext });
+      const result = event.results[event.results.length - 1];
+      const chosen = this.chooseRecognitionAlternative(result);
+      let transcript = correctSpeechTranscript(chosen.text || "", { animeContext: true });
+      transcript = transcript.trim();
       if (!transcript) return;
 
-      if (containsWakeWord(transcript)) this.wakeArmedUntil = Date.now() + 8000;
-
-      const detected = detectLanguage(transcript, this.currentLanguage || "pt");
-      if (this.languageMode === "auto" && detected !== this.currentLanguage) {
-        this.currentLanguage = detected;
-        this.autoLocaleIndex = Math.max(0, this.autoLanguages.indexOf(detected));
-        this.onLanguageDetected(detected);
-      }
-
       this.pendingTranscript = transcript;
-      this.lastDisplayedTranscript = transcript;
       this.onInterimTranscript(transcript);
       this.onStatusChange(`Ouvindo: “${transcript}”`);
       this.resetSilenceTimer();
@@ -153,10 +147,6 @@ export class VoiceService {
         "network": "O reconhecimento de voz teve um erro de rede."
       };
 
-      if (event.error === "no-speech" && this.languageMode === "auto") {
-        this.rotateAutoLocale();
-      }
-
       if (event.error !== "no-speech" && event.error !== "aborted") {
         this.onStatusChange(messages[event.error] || `Erro de voz: ${event.error}`);
       }
@@ -169,9 +159,8 @@ export class VoiceService {
       if (this.pendingTranscript || this.dispatching || this.isSpeaking) return;
 
       if (this.alwaysListening && !this.manualStop && document.visibilityState === "visible") {
-        // Ao recriar, aplicamos o idioma detectado à próxima rodada.
         this.recognition = null;
-        this.scheduleRestart(420);
+        this.scheduleRestart(360);
       } else if (!this.isSpeaking) {
         this.onStatusChange("Sistema pronto.");
       }
@@ -190,21 +179,11 @@ export class VoiceService {
 
     const transcript = this.pendingTranscript.trim();
     this.pendingTranscript = "";
-    this.lastDisplayedTranscript = "";
     clearTimeout(this.silenceTimer);
     this.silenceTimer = null;
 
-    const hasWakeWord = containsWakeWord(transcript);
-    const recentlyHeardWakeWord = Date.now() < this.wakeArmedUntil;
-
-    if (this.alwaysListening && !hasWakeWord && !recentlyHeardWakeWord) {
-      this.onInterimTranscript("");
-      this.onStatusChange('Não detectei “Jordan”. Continuo ouvindo.');
-      this.restartRecognitionSoon();
-      return;
-    }
-
-    this.wakeArmedUntil = 0;
+    // V0.5: quando o áudio contínuo está ligado, NÃO existe mais wake word.
+    // Qualquer frase finalizada por 2 s de silêncio é enviada para a JORDAN.
     this.dispatching = true;
     this.onInterimTranscript("");
     this.onStatusChange("Processando...");
@@ -219,13 +198,9 @@ export class VoiceService {
       this.dispatching = false;
       if (this.alwaysListening && !this.manualStop && !this.isSpeaking && document.visibilityState === "visible") {
         this.recognition = null;
-        this.scheduleRestart(420);
+        this.scheduleRestart(330);
       }
     }
-  }
-
-  normalize(text = "") {
-    return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   }
 
   start({ always = false } = {}) {
@@ -236,9 +211,9 @@ export class VoiceService {
 
     if (this.isSpeaking) this.cancelSpeech({ resumeListening: false });
 
-    this.configureRecognition();
     this.alwaysListening = always;
     this.manualStop = false;
+    this.configureRecognition();
     if (this.listening) return true;
 
     clearTimeout(this.restartTimer);
@@ -247,7 +222,7 @@ export class VoiceService {
       return true;
     } catch {
       this.recognition = null;
-      this.scheduleRestart(450);
+      if (always) this.scheduleRestart(500);
       return false;
     }
   }
@@ -270,28 +245,24 @@ export class VoiceService {
   }
 
   setAlwaysListening(enabled) {
-    this.alwaysListening = enabled;
-    if (enabled) this.start({ always: true });
-    else {
-      this.stop({ manual: true });
-      this.onStatusChange("Escuta contínua desativada.");
+    this.alwaysListening = Boolean(enabled);
+    if (enabled) {
+      this.manualStop = false;
+      return this.start({ always: true });
     }
+
+    this.stop({ manual: true });
+    this.onStatusChange("Áudio contínuo desativado.");
+    return true;
   }
 
-  restartRecognitionSoon() {
-    if (this.recognition && this.listening) {
-      try { this.recognition.stop(); } catch {}
-    }
-    this.recognition = null;
-    this.scheduleRestart(350);
-  }
-
-  scheduleRestart(delay = 400) {
+  scheduleRestart(delay = 350) {
     clearTimeout(this.restartTimer);
     if (!this.alwaysListening || this.manualStop || this.isSpeaking) return;
 
     this.restartTimer = setTimeout(() => {
       if (!this.listening && document.visibilityState === "visible") {
+        this.recognition = null;
         this.start({ always: true });
       }
     }, delay);
@@ -303,24 +274,21 @@ export class VoiceService {
       if (!AudioContext) return;
       this.audioContext ??= new AudioContext();
       const ctx = this.audioContext;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
       const oscillator = ctx.createOscillator();
       const gain = ctx.createGain();
       const now = ctx.currentTime;
       oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(920, now);
-      oscillator.frequency.exponentialRampToValueAtTime(680, now + 0.045);
+      oscillator.frequency.setValueAtTime(900, now);
+      oscillator.frequency.exponentialRampToValueAtTime(700, now + 0.04);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.018, now + 0.006);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+      gain.gain.exponentialRampToValueAtTime(0.014, now + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
       oscillator.connect(gain);
       gain.connect(ctx.destination);
       oscillator.start(now);
-      oscillator.stop(now + 0.06);
+      oscillator.stop(now + 0.055);
     } catch {}
-  }
-
-  setPreferredVoiceName(name) {
-    this.preferredVoiceName = name || null;
   }
 
   getVoices() {
@@ -328,110 +296,28 @@ export class VoiceService {
     return window.speechSynthesis.getVoices();
   }
 
-  getPortugueseVoices() {
-    return this.getVoices().filter((voice) => voice.lang?.toLowerCase().startsWith("pt"));
+  chooseJordanVoice() {
+    return chooseJordanBaseVoice(this.getVoices(), localeForLanguage(this.currentLanguage));
   }
 
-  chooseVoiceForLanguage(language = "pt") {
-    const locale = localeForLanguage(language).toLowerCase();
-    const baseLang = locale.split("-")[0];
-    const voices = this.getVoices().filter((voice) => voice.lang?.toLowerCase().startsWith(baseLang));
-    if (!voices.length) return null;
-
-    if (language === "pt" && this.preferredVoiceName) {
-      const preferred = voices.find((voice) => voice.name === this.preferredVoiceName);
-      if (preferred) return preferred;
-    }
-
-    const feminineHints = [
-      "google", "female", "feminina", "luciana", "francisca", "maria", "helena", "leticia", "camila",
-      "fernanda", "vitoria", "bruna", "samantha", "victoria", "zira", "susan", "monica", "paulina",
-      "helena", "kyoko", "o-ren", "haruka", "nanami"
-    ];
-    const masculineHints = /male|mascul|felipe|daniel|ricardo|antonio|joao|thiago|jorge|diego|carlos|david/;
-
-    const score = (voice) => {
-      const name = this.normalize(voice.name);
-      const lang = voice.lang?.toLowerCase() || "";
-      let value = lang === locale ? 140 : 40;
-      if (name.includes("google")) value += 160;
-      if (language === "pt" && name.includes("google") && (name.includes("portugues") || name.includes("portuguese"))) value += 450;
-      feminineHints.forEach((hint, index) => {
-        if (name.includes(hint)) value += 95 - Math.min(70, index * 2);
-      });
-      if (masculineHints.test(name)) value -= 220;
-      return value;
-    };
-
-    return [...voices].sort((a, b) => score(b) - score(a))[0] ?? null;
-  }
-
-  chooseFemalePortugueseVoice() {
-    return this.chooseVoiceForLanguage("pt");
-  }
-
-  humanizeSpeechText(text = "") {
-    return text
-      .replace(/https?:\/\/\S+/g, "")
-      .replace(/\n+/g, ". ")
-      .replace(/•/g, "")
-      .replace(/\s+/g, " ")
-      .replace(/\.\s*\./g, ".")
-      .trim();
-  }
-
-  buildProsodySegments(text, { rate, pitch } = {}) {
-    const clean = this.humanizeSpeechText(text);
-    const sentences = clean.match(/[^.!?…。！？]+[.!?…。！？]?/g) ?? [clean];
-    const segments = [];
-
-    for (const rawSentence of sentences) {
-      const sentence = rawSentence.trim();
-      if (!sentence) continue;
-      const punctuation = sentence.slice(-1);
-      const isPunctuation = /[.!?…。！？]/.test(punctuation);
-      const body = isPunctuation ? sentence.slice(0, -1).trim() : sentence;
-
-      if (punctuation === "?" || punctuation === "？") {
-        const words = body.split(/\s+/);
-        const tailSize = Math.min(3, Math.max(1, words.length));
-        const main = words.slice(0, -tailSize).join(" ");
-        const tail = words.slice(-tailSize).join(" ");
-        if (main) segments.push({ text: main, rate, pitch });
-        segments.push({ text: `${tail}?`, rate: Math.max(0.82, rate - 0.06), pitch: Math.min(2, pitch + 0.13) });
-        continue;
-      }
-
-      if (punctuation === "!" || punctuation === "！") {
-        segments.push({ text: `${body}!`, rate: Math.min(2, rate + 0.05), pitch: Math.min(2, pitch + 0.14) });
-        continue;
-      }
-
-      if (punctuation === "…") {
-        segments.push({ text: `${body}...`, rate: Math.max(0.8, rate - 0.09), pitch: Math.max(0.8, pitch - 0.04) });
-        continue;
-      }
-
-      segments.push({ text: punctuation === "." || punctuation === "。" ? `${body}.` : body, rate, pitch });
-    }
-
-    return segments;
+  getVoiceProfileLabel() {
+    return JORDAN_VOICE_PROFILE.label;
   }
 
   async speak(text, {
-    rate = 1.16,
-    pitch = 1.34,
+    rate = JORDAN_VOICE_PROFILE.baseRate,
+    pitch = JORDAN_VOICE_PROFILE.basePitch,
     volume = 1,
     mood = "neutral",
     allowBargeIn = true,
-    language = "pt"
+    language = this.currentLanguage
   } = {}) {
     if (!this.synthesisSupported || !text) return;
 
     const token = ++this.speechToken;
     const shouldResume = this.alwaysListening;
     this.manualStop = false;
-    this.currentSpeechText = this.humanizeSpeechText(text);
+    this.currentSpeechText = String(text);
 
     clearTimeout(this.silenceTimer);
     this.pendingTranscript = "";
@@ -444,24 +330,12 @@ export class VoiceService {
     window.speechSynthesis.cancel();
     this.setSpeakingState(true);
 
-    let moodRate = rate;
-    let moodPitch = pitch;
-    if (mood === "excited") { moodRate += 0.04; moodPitch += 0.08; }
-    else if (mood === "serious") { moodRate -= 0.04; moodPitch -= 0.05; }
-    else if (mood === "gentle") { moodRate -= 0.03; moodPitch += 0.02; }
-
-    // Japonês costuma soar melhor com menos pitch artificial.
-    if (language === "ja") moodPitch = Math.min(moodPitch, 1.18);
-
-    const segments = this.buildProsodySegments(this.currentSpeechText, {
-      rate: Math.max(0.7, Math.min(2, moodRate)),
-      pitch: Math.max(0.5, Math.min(2, moodPitch))
-    });
+    const segments = buildJordanProsody(this.currentSpeechText, { rate, pitch, mood });
 
     if (allowBargeIn && shouldResume) {
       setTimeout(() => {
         if (this.isSpeaking && token === this.speechToken) this.startBargeInRecognition();
-      }, 500);
+      }, 380);
     }
 
     for (const segment of segments) {
@@ -477,7 +351,7 @@ export class VoiceService {
 
     if (shouldResume && this.alwaysListening && document.visibilityState === "visible") {
       this.recognition = null;
-      this.scheduleRestart(380);
+      this.scheduleRestart(300);
     }
   }
 
@@ -487,10 +361,11 @@ export class VoiceService {
 
       const utterance = new SpeechSynthesisUtterance(segment.text);
       utterance.lang = localeForLanguage(language);
-      utterance.rate = segment.rate;
-      utterance.pitch = segment.pitch;
+      utterance.rate = Math.max(0.7, Math.min(2, segment.rate));
+      utterance.pitch = Math.max(0.5, Math.min(2, segment.pitch));
       utterance.volume = volume;
-      const selected = this.chooseVoiceForLanguage(language);
+
+      const selected = chooseJordanBaseVoice(this.getVoices(), utterance.lang);
       if (selected) utterance.voice = selected;
 
       let finished = false;
@@ -506,11 +381,42 @@ export class VoiceService {
     });
   }
 
+  pronounceEnglish(text) {
+    if (!this.synthesisSupported || !text) return;
+
+    const shouldResume = this.alwaysListening;
+    if (this.recognition && this.listening) {
+      try { this.recognition.stop(); } catch {}
+    }
+
+    const utterance = new SpeechSynthesisUtterance(String(text));
+    utterance.lang = "en-US";
+    utterance.rate = 0.82;
+    utterance.pitch = 1.02;
+    utterance.volume = 1;
+
+    const voices = this.getVoices().filter((voice) => (voice.lang || "").toLowerCase().startsWith("en"));
+    const preferred = voices.find((voice) => /google.*us|samantha|zira|female|victoria/i.test(voice.name)) || voices[0];
+    if (preferred) utterance.voice = preferred;
+
+    const resume = () => {
+      if (shouldResume && this.alwaysListening && document.visibilityState === "visible") {
+        this.recognition = null;
+        this.scheduleRestart(240);
+      }
+    };
+
+    utterance.onend = resume;
+    utterance.onerror = resume;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }
+
   setSpeakingState(active) {
     if (this.isSpeaking === active) return;
     this.isSpeaking = active;
     this.onSpeakingChange(active);
-    this.onStatusChange(active ? "Falando... pode me interromper." : "Sistema pronto.");
+    this.onStatusChange(active ? "Falando... diga “Shut up” para interromper." : "Sistema pronto.");
   }
 
   cancelSpeech({ resumeListening = false } = {}) {
@@ -521,7 +427,7 @@ export class VoiceService {
     this.currentSpeechText = "";
     this.setSpeakingState(false);
     if (resumeListening && this.recognitionSupported) {
-      setTimeout(() => this.start({ always: this.alwaysListening }), 120);
+      setTimeout(() => this.start({ always: this.alwaysListening }), 100);
     }
   }
 
@@ -535,33 +441,24 @@ export class VoiceService {
 
     try {
       const recognition = new this.Recognition();
-      recognition.lang = this.getRecognitionLocale();
+      // Interrupção é um comando de sistema em inglês.
+      recognition.lang = "en-US";
       recognition.interimResults = true;
       recognition.maxAlternatives = 5;
       recognition.continuous = true;
 
       recognition.onresult = (event) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; i++) {
-          const chosen = pickBestRecognitionAlternative(event.results[i], { animeContext: true });
-          if (chosen.text) transcript += `${chosen.text} `;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          for (let j = 0; j < result.length; j++) {
+            const transcript = result[j]?.transcript?.trim() || "";
+            if (!isImmediateStopCommand(transcript)) continue;
+            this.stopBargeInRecognition();
+            this.cancelSpeech({ resumeListening: true });
+            this.onStatusChange("Fala interrompida. Áudio continua ativo.");
+            return;
+          }
         }
-
-        transcript = correctSpeechTranscript(transcript.trim(), { animeContext: true });
-        if (!transcript) return;
-
-        if (containsWakeWord(transcript)) this.bargeWakeArmedUntil = Date.now() + 6500;
-        const heardWake = containsWakeWord(transcript) || Date.now() < this.bargeWakeArmedUntil;
-        if (!heardWake) return;
-
-        const spoken = this.normalize(this.currentSpeechText);
-        const withoutWake = this.normalize(transcript).replace(/\bjordan\b/g, "").trim();
-        if (withoutWake.length > 8 && spoken.includes(withoutWake)) return;
-
-        this.stopBargeInRecognition();
-        this.cancelSpeech({ resumeListening: false });
-        this.onStatusChange("Interrompida. Processando seu novo comando...");
-        Promise.resolve(this.onTranscript(transcript)).catch(() => {});
       };
 
       recognition.onerror = () => {};

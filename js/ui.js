@@ -52,7 +52,6 @@ export class JordanUI {
       dbStatus: document.querySelector("#dbStatus"),
       speechRecognitionStatus: document.querySelector("#speechRecognitionStatus"),
       speechSynthesisStatus: document.querySelector("#speechSynthesisStatus"),
-      voiceSelect: document.querySelector("#voiceSelect"),
       testVoiceButton: document.querySelector("#testVoiceButton"),
       personalitySelect: document.querySelector("#personalitySelect"),
       personalityDescription: document.querySelector("#personalityDescription"),
@@ -65,6 +64,7 @@ export class JordanUI {
       locationStatus: document.querySelector("#locationStatus"),
       lexiconStatus: document.querySelector("#lexiconStatus"),
       mediaProviderSelect: document.querySelector("#mediaProviderSelect"),
+      systemCommandList: document.querySelector("#systemCommandList"),
       toastContainer: document.querySelector("#toastContainer"),
 
       eventDialog: document.querySelector("#eventDialog"),
@@ -139,7 +139,7 @@ export class JordanUI {
       this.elements.liveTranscript.textContent = `“${text}”`;
       this.elements.liveTranscript.classList.add("active");
     } else {
-      this.elements.liveTranscript.textContent = "Toque no símbolo e fale normalmente.";
+      this.elements.liveTranscript.textContent = "Áudio contínuo: fale normalmente. Comandos do sistema são em inglês.";
       this.elements.liveTranscript.classList.remove("active");
     }
   }
@@ -169,16 +169,18 @@ export class JordanUI {
     this.elements.conversation.scrollTop = this.elements.conversation.scrollHeight;
   }
 
-  setLanguageStatus(mode = "auto", detected = "pt") {
-    const labels = { pt: "PT", en: "EN", es: "ES", ja: "JA" };
-    const text = mode === "auto"
-      ? `AUTO · ${labels[detected] ?? "PT"} detectado`
-      : `${labels[mode] ?? mode.toUpperCase()} fixo`;
+  setLanguageStatus(mode = "pt") {
+    const labels = {
+      pt: "PT-BR",
+      en: "EN-US",
+      es: "ES",
+      ja: "JA"
+    };
+    const selected = labels[mode] ?? "PT-BR";
+    const text = `${selected} · MANUAL`;
 
     if (this.elements.languageStatus) this.elements.languageStatus.textContent = text;
-    if (this.elements.coreLanguageStatus) this.elements.coreLanguageStatus.textContent = mode === "auto"
-      ? `AUTO · PT / EN / ES / JA · NOW ${labels[detected] ?? "PT"}`
-      : `${labels[mode] ?? mode.toUpperCase()} · FIXED`;
+    if (this.elements.coreLanguageStatus) this.elements.coreLanguageStatus.textContent = `${selected} · FIXED`;
     if (this.elements.languageModeSelect) this.elements.languageModeSelect.value = mode;
   }
 
@@ -423,7 +425,7 @@ export class JordanUI {
 
     for (const memory of memories) {
       const item = document.createElement("article");
-      item.className = "memory-item";
+      item.className = `memory-item${memory.protected ? " protected" : ""}`;
 
       const body = document.createElement("div");
 
@@ -437,29 +439,40 @@ export class JordanUI {
 
       const type = document.createElement("div");
       type.className = "memory-item-type";
-      type.textContent = memory.type === "preference"
-        ? "PREFERÊNCIA"
-        : memory.type === "story"
-          ? "HISTÓRIA"
-          : "FATO";
+      type.textContent = memory.protected
+        ? "CORE · PROTEGIDA"
+        : memory.type === "preference"
+          ? "PREFERÊNCIA"
+          : memory.type === "story"
+            ? "HISTÓRIA"
+            : "FATO";
 
       body.append(label, value, type);
 
-      const remove = document.createElement("button");
-      remove.className = "memory-delete";
-      remove.type = "button";
-      remove.textContent = "×";
-      remove.title = "Esquecer";
-      remove.addEventListener("click", async () => {
-        const confirmed = window.confirm(`Fazer JORDAN esquecer “${memory.label}”?`);
-        if (!confirmed) return;
+      if (memory.protected) {
+        const lock = document.createElement("span");
+        lock.className = "memory-lock";
+        lock.textContent = "🔒";
+        lock.title = "Memória central protegida";
+        item.append(body, lock);
+      } else {
+        const remove = document.createElement("button");
+        remove.className = "memory-delete";
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.title = "Esquecer";
+        remove.addEventListener("click", async () => {
+          const confirmed = window.confirm(`Fazer JORDAN esquecer “${memory.label}”?`);
+          if (!confirmed) return;
 
-        await this.memory.forget(memory.id);
-        await this.renderMemory();
-        this.toast(`Esqueci “${memory.label}”.`);
-      });
+          const removed = await this.memory.forget(memory.id);
+          await this.renderMemory();
+          this.toast(removed ? `Esqueci “${memory.label}”.` : "Essa memória é protegida pelo núcleo.");
+        });
 
-      item.append(body, remove);
+        item.append(body, remove);
+      }
+
       this.elements.memoryList.appendChild(item);
     }
   }

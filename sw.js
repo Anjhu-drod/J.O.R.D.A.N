@@ -1,4 +1,4 @@
-const CACHE_NAME = "jordan-v0.4.0";
+const CACHE_NAME = "jordan-v0.5.0";
 
 const APP_SHELL = [
   "./",
@@ -14,6 +14,8 @@ const APP_SHELL = [
   "./js/knowledgeBase.js",
   "./js/internetService.js",
   "./js/languageService.js",
+  "./js/jordanVoiceProfile.js",
+  "./js/systemCommandService.js",
   "./js/locationService.js",
   "./js/mediaService.js",
   "./js/semanticLexicon.js",

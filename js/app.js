@@ -9,6 +9,7 @@ import { InternetService } from "./internetService.js";
 import { LocationService } from "./locationService.js";
 import { MediaService } from "./mediaService.js";
 import { getLexiconStats } from "./semanticLexicon.js";
+import { getSystemCommands, matchSystemCommand } from "./systemCommandService.js";
 import { detectEventProfile } from "./eventProfiles.js";
 import { getPersonality, randomIdleDelay, randomIdlePrompt } from "./personalityService.js";
 import {
@@ -36,8 +37,7 @@ const ui = new JordanUI(calendar, memory);
 let deferredInstallPrompt = null;
 let voiceEnabled = true;
 let assistantVolume = 1;
-let preferredVoiceName = "";
-let languageMode = "auto";
+let languageMode = "pt";
 let internetEnabled = true;
 let mediaProvider = "youtubeMusic";
 let idleTimer = null;
@@ -88,13 +88,16 @@ async function initialize() {
 
   voiceEnabled = await getSetting("voiceEnabled", true);
   assistantVolume = await getSetting("assistantVolume", 1);
-  preferredVoiceName = await getSetting("preferredVoiceName", "");
-  languageMode = await getSetting("languageMode", "auto");
+  languageMode = await getSetting("languageMode", "pt");
+  if (languageMode === "auto") {
+    languageMode = "pt";
+    await setSetting("languageMode", "pt");
+  }
   internetEnabled = await getSetting("internetEnabled", true);
   mediaProvider = await getSetting("mediaProvider", "youtubeMusic");
 
-  voice.setPreferredVoiceName(preferredVoiceName);
   voice.setLanguageMode(languageMode);
+  assistant.setResponseLanguage?.(languageMode);
   internet.setEnabled(internetEnabled);
   media.setDefaultProvider(mediaProvider);
 
@@ -103,6 +106,7 @@ async function initialize() {
   ui.setLanguageStatus(languageMode, voice.currentLanguage);
   ui.setInternetStatus({ enabled: internetEnabled, online: navigator.onLine });
   ui.setLexiconStatus(getLexiconStats());
+  renderSystemCommandLearning();
 
   if (internetEnabled && navigator.onLine) {
     internet.testConnection().then((test) => {
@@ -123,11 +127,27 @@ async function initialize() {
   ui.elements.pwaStatus.textContent = "serviceWorker" in navigator ? "Compatível" : "Não compatível";
   ui.setNotificationStatus(reminders.notificationPermission);
 
-  const savedAlwaysListening = await getSetting("alwaysListening", false);
-  ui.elements.alwaysListeningToggle.checked = false;
+  // V0.5 migration: o áudio contínuo passa a ser ON por padrão inclusive
+  // para quem veio de uma versão antiga. A migração acontece uma única vez;
+  // depois disso a escolha do usuário é respeitada normalmente.
+  const audioDefaultApplied = await getSetting("v05AudioDefaultApplied", false);
+  if (!audioDefaultApplied) {
+    await setSetting("alwaysListening", true);
+    await setSetting("v05AudioDefaultApplied", true);
+  }
 
-  if (savedAlwaysListening) {
-    ui.setStatus('O modo “Jordan” estava ativo. Toque no controle para reativar o microfone.');
+  const savedAlwaysListening = await getSetting("alwaysListening", true);
+  ui.elements.alwaysListeningToggle.checked = savedAlwaysListening;
+
+  if (savedAlwaysListening && voice.recognitionSupported) {
+    setTimeout(() => {
+      const started = voice.setAlwaysListening(true);
+      if (!started) {
+        ui.setStatus("Áudio contínuo está ativado. Toque no símbolo uma vez se o navegador pedir permissão.");
+      }
+    }, 450);
+  } else if (!voice.recognitionSupported) {
+    ui.setStatus("Áudio contínuo ativado por padrão, mas este navegador não oferece reconhecimento de voz.");
   }
 
   await ui.refreshAll();
@@ -138,43 +158,50 @@ async function initialize() {
   ui.elements.commandInput.focus();
 }
 
-function populateVoiceSelect() {
-  if (!voice.synthesisSupported) return;
-
-  const voices = voice.getPortugueseVoices();
-  ui.elements.voiceSelect.innerHTML = '<option value="">Google PT-BR feminina / infantil (automático)</option>';
-
-  const chosen = voice.chooseFemalePortugueseVoice();
-  const sorted = [...voices].sort((a, b) => {
-    if (a.name === chosen?.name) return -1;
-    if (b.name === chosen?.name) return 1;
-    return a.name.localeCompare(b.name, "pt-BR");
-  });
-
-  for (const item of sorted) {
-    const option = document.createElement("option");
-    option.value = item.name;
-    option.textContent = `${item.name} · ${item.lang}`;
-    ui.elements.voiceSelect.appendChild(option);
-  }
-
-  ui.elements.voiceSelect.value = preferredVoiceName;
-}
-
 function updateVoiceStatus() {
   if (!voice.synthesisSupported) {
     ui.elements.speechSynthesisStatus.textContent = "Indisponível";
     return;
   }
 
-  const selected = voice.chooseFemalePortugueseVoice();
-  populateVoiceSelect();
+  const selected = voice.chooseJordanVoice?.();
+  const base = selected?.name ? ` · base: ${selected.name}` : "";
+  ui.elements.speechSynthesisStatus.textContent = `${voice.getVoiceProfileLabel?.() || "JORDAN Spark"}${base}`;
+}
 
-  if (selected) {
-    const autoLabel = preferredVoiceName ? "Manual" : "Auto";
-    ui.elements.speechSynthesisStatus.textContent = `${autoLabel}: ${selected.name}`;
-  } else {
-    ui.elements.speechSynthesisStatus.textContent = "PT-BR do sistema";
+function renderSystemCommandLearning() {
+  const container = ui.elements.systemCommandList;
+  if (!container) return;
+
+  container.innerHTML = "";
+  for (const command of getSystemCommands()) {
+    const item = document.createElement("article");
+    item.className = "system-command-item";
+
+    const body = document.createElement("div");
+    const phrase = document.createElement("strong");
+    phrase.textContent = command.phrase;
+
+    const description = document.createElement("p");
+    description.textContent = command.description;
+
+    const hint = document.createElement("span");
+    hint.className = "command-pronunciation-hint";
+    hint.textContent = command.hint;
+
+    body.append(phrase, description, hint);
+
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "hud-button small pronunciation-button";
+    play.textContent = "▶ PRONÚNCIA";
+    play.addEventListener("click", () => {
+      registerInteraction();
+      voice.pronounceEnglish(command.phrase);
+    });
+
+    item.append(body, play);
+    container.appendChild(item);
   }
 }
 
@@ -208,21 +235,14 @@ function bindEvents() {
   ui.elements.micButton.addEventListener("click", toggleVoice);
   ui.elements.clearChatButton.addEventListener("click", () => ui.clearChat());
 
-  ui.elements.voiceSelect.addEventListener("change", async (event) => {
-    registerInteraction();
-    preferredVoiceName = event.target.value;
-    voice.setPreferredVoiceName(preferredVoiceName);
-    await setSetting("preferredVoiceName", preferredVoiceName);
-    updateVoiceStatus();
-  });
-
   ui.elements.languageModeSelect?.addEventListener("change", async (event) => {
     registerInteraction();
     languageMode = event.target.value;
     voice.setLanguageMode(languageMode);
+    assistant.setResponseLanguage?.(languageMode);
     await setSetting("languageMode", languageMode);
     ui.setLanguageStatus(languageMode, voice.currentLanguage);
-    ui.toast(`Reconhecimento de idioma: ${event.target.selectedOptions[0]?.textContent || languageMode}.`);
+    ui.toast(`Idioma fixo da conversa: ${event.target.selectedOptions[0]?.textContent || languageMode}.`);
   });
 
   ui.elements.internetToggleButton?.addEventListener("click", async () => {
@@ -254,7 +274,7 @@ function bindEvents() {
     if (voice.isSpeaking) voice.cancelSpeech();
     const profile = assistant.getPersonality();
     await voice.speak(
-      "Oi! Eu sou a Jordan. Agora minha voz tá mais rápida, leve e expressiva. Gostou?",
+      "Oi! Eu sou a Jordan. Esta é a minha voz jovem original, rápida, leve e expressiva!",
       {
         volume: assistantVolume,
         rate: profile.voice.rate,
@@ -293,7 +313,7 @@ function bindEvents() {
       }
 
       voice.setAlwaysListening(true);
-      ui.addMessage("JORDAN", 'Modo “Jordan” ativado. Pode me interromper dizendo “Jordan” enquanto eu estiver falando.');
+      ui.addMessage("JORDAN", 'Áudio contínuo ativado. Agora você pode falar comigo sem dizer “Jordan”. Para interromper minha fala, diga “Shut up”.');
     } else {
       voice.setAlwaysListening(false);
     }
@@ -421,6 +441,12 @@ async function handleCommand(text, { fromVoice = false } = {}) {
   ui.setStatus("Processando...");
 
   try {
+    const systemCommand = matchSystemCommand(text);
+    if (systemCommand) {
+      await executeSystemCommand(systemCommand);
+      return;
+    }
+
     const result = await assistant.execute(text);
     ui.addMessage("JORDAN", result.text);
 
@@ -479,6 +505,90 @@ async function handleCommand(text, { fromVoice = false } = {}) {
     ui.setStatus("Erro.");
   } finally {
     resetIdleTimer();
+  }
+}
+
+
+async function executeSystemCommand(command) {
+  const id = command?.id;
+
+  if (id === "stop_speaking") {
+    voice.cancelSpeech({ resumeListening: voice.alwaysListening });
+    ui.setStatus("Fala interrompida.");
+    return;
+  }
+
+  if (id === "audio_on") {
+    ui.elements.alwaysListeningToggle.checked = true;
+    await setSetting("alwaysListening", true);
+    voice.setAlwaysListening(true);
+    ui.addMessage("JORDAN", "Áudio contínuo ativado. Pode falar normalmente.");
+    return;
+  }
+
+  if (id === "audio_off") {
+    ui.elements.alwaysListeningToggle.checked = false;
+    await setSetting("alwaysListening", false);
+    voice.setAlwaysListening(false);
+    ui.addMessage("JORDAN", "Áudio contínuo desativado.");
+    return;
+  }
+
+  if (id === "open_calendar") {
+    ui.openView("calendar");
+    ui.toast("Calendário aberto.");
+    return;
+  }
+
+  if (id === "open_memory") {
+    ui.openView("memory");
+    ui.toast("Memória aberta.");
+    return;
+  }
+
+  if (id === "open_settings") {
+    ui.openView("system");
+    ui.toast("Configurações abertas.");
+    return;
+  }
+
+  if (id === "go_home") {
+    ui.openView("core");
+    return;
+  }
+
+  if (id === "open_tutorial") {
+    ui.openTutorialPanel();
+    return;
+  }
+
+  if (id === "internet_on" || id === "internet_off") {
+    internetEnabled = id === "internet_on";
+    internet.setEnabled(internetEnabled);
+    await setSetting("internetEnabled", internetEnabled);
+    ui.setInternetStatus({ enabled: internetEnabled, online: navigator.onLine });
+    ui.toast(internetEnabled ? "Internet Core ativada." : "Internet Core desativada.");
+    return;
+  }
+
+  if (id === "voice_mute" || id === "voice_unmute") {
+    voiceEnabled = id === "voice_unmute";
+    await setSetting("voiceEnabled", voiceEnabled);
+    ui.toast(voiceEnabled ? "Respostas faladas ativadas." : "Respostas faladas desativadas.");
+    return;
+  }
+
+  if (id === "volume_up" || id === "volume_down") {
+    const delta = id === "volume_up" ? 0.1 : -0.1;
+    assistantVolume = Math.max(0.1, Math.min(1, Math.round((assistantVolume + delta) * 10) / 10));
+    await setSetting("assistantVolume", assistantVolume);
+    ui.toast(`Volume da JORDAN: ${Math.round(assistantVolume * 100)}%.`);
+    return;
+  }
+
+  if (id === "clear_chat") {
+    ui.clearChat();
+    ui.toast("Chat limpo.");
   }
 }
 
