@@ -16,9 +16,11 @@ export class VisualEffectsService {
     window.addEventListener("pointermove", this.onPointerMove, { passive: true });
     window.addEventListener("touchmove", this.onTouchMove, { passive: true });
     window.addEventListener("resize", this.onResize, { passive: true });
+    document.addEventListener("pointerdown", this.onPointerDown, { passive: true });
+    document.addEventListener("click", this.onClick, { passive: true });
 
-    // Dá vida ao cenário mesmo antes do primeiro movimento do usuário.
     this.setPointer(window.innerWidth * 0.58, window.innerHeight * 0.36);
+    document.body.classList.add("visual-core-ready");
   }
 
   stop() {
@@ -27,6 +29,8 @@ export class VisualEffectsService {
     window.removeEventListener("pointermove", this.onPointerMove);
     window.removeEventListener("touchmove", this.onTouchMove);
     window.removeEventListener("resize", this.onResize);
+    document.removeEventListener("pointerdown", this.onPointerDown);
+    document.removeEventListener("click", this.onClick);
     cancelAnimationFrame(this.frame);
   }
 
@@ -41,9 +45,40 @@ export class VisualEffectsService {
     this.queuePointer(touch.clientX, touch.clientY);
   };
 
-  onResize = () => {
-    this.buildParticles(true);
+  onResize = () => this.buildParticles(true);
+
+  onPointerDown = (event) => {
+    const target = event.target?.closest?.("button, a, [data-command], .month-day, .event-item");
+    if (!target || target.matches(":disabled")) return;
+    this.spawnRipple(target, event.clientX, event.clientY);
+    target.classList.remove("jordan-press");
+    void target.offsetWidth;
+    target.classList.add("jordan-press");
+    setTimeout(() => target.classList.remove("jordan-press"), 360);
   };
+
+  onClick = (event) => {
+    const target = event.target?.closest?.("[data-view-target]");
+    if (!target) return;
+    document.body.classList.remove("nav-flash");
+    void document.body.offsetWidth;
+    document.body.classList.add("nav-flash");
+    setTimeout(() => document.body.classList.remove("nav-flash"), 520);
+  };
+
+  spawnRipple(target, clientX, clientY) {
+    try {
+      const rect = target.getBoundingClientRect();
+      const ripple = document.createElement("span");
+      ripple.className = "jordan-ripple";
+      const size = Math.max(rect.width, rect.height) * 1.35;
+      ripple.style.width = ripple.style.height = `${size}px`;
+      ripple.style.left = `${clientX - rect.left - size / 2}px`;
+      ripple.style.top = `${clientY - rect.top - size / 2}px`;
+      target.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 650);
+    } catch {}
+  }
 
   queuePointer(x, y) {
     this.lastTouch = { x, y };
@@ -68,7 +103,7 @@ export class VisualEffectsService {
   buildParticles(force = false) {
     if (!this.particleField) return;
     const compact = window.innerWidth < 700;
-    const target = compact ? 16 : 32;
+    const target = compact ? 22 : 46;
     if (!force && this.particleField.children.length === target) return;
 
     this.particleField.textContent = "";

@@ -66,6 +66,11 @@ export class JordanUI {
       dbStatus: document.querySelector("#dbStatus"),
       speechRecognitionStatus: document.querySelector("#speechRecognitionStatus"),
       speechSynthesisStatus: document.querySelector("#speechSynthesisStatus"),
+      neuralVoiceStatus: document.querySelector("#neuralVoiceStatus"),
+      neuralVoiceToggle: document.querySelector("#neuralVoiceToggle"),
+      neuralVoiceEndpoint: document.querySelector("#neuralVoiceEndpoint"),
+      saveVoiceEndpointButton: document.querySelector("#saveVoiceEndpointButton"),
+      checkVoiceCoreButton: document.querySelector("#checkVoiceCoreButton"),
       testVoiceButton: document.querySelector("#testVoiceButton"),
       personalitySelect: document.querySelector("#personalitySelect"),
       personalityDescription: document.querySelector("#personalityDescription"),
@@ -119,6 +124,10 @@ export class JordanUI {
       accountEmail: document.querySelector("#accountEmail"),
       accountUid: document.querySelector("#accountUid"),
       accountSyncBadge: document.querySelector("#accountSyncBadge"),
+      accountProviders: document.querySelector("#accountProviders"),
+      linkGoogleAccountButton: document.querySelector("#linkGoogleAccountButton"),
+      linkPasswordInput: document.querySelector("#linkPasswordInput"),
+      linkPasswordAccountButton: document.querySelector("#linkPasswordAccountButton"),
       cloudSyncStatus: document.querySelector("#cloudSyncStatus"),
       cloudTopChip: document.querySelector("#cloudTopChip"),
       lineageIdentityStatus: document.querySelector("#lineageIdentityStatus"),
@@ -131,6 +140,10 @@ export class JordanUI {
       internetTelemetryLabel: document.querySelector("#internetTelemetryLabel"),
       memoryTelemetryLabel: document.querySelector("#memoryTelemetryLabel"),
       executionTelemetryLabel: document.querySelector("#executionTelemetryLabel"),
+      cinematicLayer: document.querySelector("#jordanCinematicLayer"),
+      cinematicKicker: document.querySelector("#cinematicKicker"),
+      cinematicTitle: document.querySelector("#cinematicTitle"),
+      cinematicSubtitle: document.querySelector("#cinematicSubtitle"),
 
       toastContainer: document.querySelector("#toastContainer"),
 
@@ -187,6 +200,88 @@ export class JordanUI {
       tutorialDialog: document.querySelector("#tutorialDialog"),
       closeTutorialButton: document.querySelector("#closeTutorialButton")
     };
+  }
+
+
+  setAccountProviders(summary = "FIREBASE AUTH", providerIds = []) {
+    if (this.elements.accountProviders) this.elements.accountProviders.textContent = summary || "FIREBASE AUTH";
+    const ids = new Set(providerIds || []);
+    if (this.elements.linkGoogleAccountButton) {
+      const linked = ids.has("google.com");
+      this.elements.linkGoogleAccountButton.disabled = linked;
+      this.elements.linkGoogleAccountButton.textContent = linked ? "GOOGLE VINCULADO ✓" : "VINCULAR GOOGLE";
+    }
+    if (this.elements.linkPasswordAccountButton) {
+      const linked = ids.has("password");
+      this.elements.linkPasswordAccountButton.disabled = linked;
+      this.elements.linkPasswordAccountButton.textContent = linked ? "SENHA VINCULADA ✓" : "VINCULAR SENHA";
+    }
+    if (this.elements.linkPasswordInput) {
+      this.elements.linkPasswordInput.disabled = ids.has("password");
+      if (ids.has("password")) this.elements.linkPasswordInput.value = "";
+    }
+  }
+
+  setNeuralVoiceStatus(status = {}) {
+    const ok = Boolean(status.ok);
+    const enabled = status.enabled !== false;
+    if (this.elements.neuralVoiceStatus) {
+      this.elements.neuralVoiceStatus.classList.toggle("online", ok);
+      this.elements.neuralVoiceStatus.classList.toggle("offline", !ok);
+      const label = this.elements.neuralVoiceStatus.querySelector("b");
+      if (label) {
+        if (!enabled) label.textContent = "VOICE CORE DESATIVADO";
+        else if (ok) label.textContent = `ONLINE · ${status.voice || "JORDAN SPARK V1"}`;
+        else if (status.reason === "timeout") label.textContent = "SEM RESPOSTA · FALLBACK LOCAL";
+        else label.textContent = "OFFLINE · FALLBACK DO DISPOSITIVO";
+      }
+    }
+    if (this.elements.speechSynthesisStatus) {
+      this.elements.speechSynthesisStatus.textContent = ok ? "JORDAN Spark Neural V1" : "JORDAN Spark · fallback";
+    }
+  }
+
+  playCinematic(kind = "core", title = "JORDAN", subtitle = "Executando", duration = 760) {
+    const layer = this.elements.cinematicLayer;
+    if (!layer) return Promise.resolve();
+    layer.dataset.kind = kind;
+    if (this.elements.cinematicKicker) this.elements.cinematicKicker.textContent = `JORDAN / ${String(kind).toUpperCase()} PROTOCOL`;
+    if (this.elements.cinematicTitle) this.elements.cinematicTitle.textContent = title;
+    if (this.elements.cinematicSubtitle) this.elements.cinematicSubtitle.textContent = subtitle;
+    layer.classList.remove("complete");
+    layer.classList.add("active");
+    clearTimeout(this._cinematicTimer);
+    return new Promise((resolve) => {
+      this._cinematicTimer = setTimeout(() => {
+        layer.classList.add("complete");
+        setTimeout(() => layer.classList.remove("active", "complete"), 260);
+        resolve();
+      }, duration);
+    });
+  }
+
+  inferCommandVisual(text = "") {
+    const value = normalizeText(text);
+    if (/calend|agenda|marqu|evento|anivers|amanha|semana/.test(value)) return "calendar";
+    if (/toque|musica|player|faixa|pause|next|track/.test(value)) return "music";
+    if (/pesquis|procure|busque|internet|quem e|o que e/.test(value)) return "research";
+    if (/rota|caminho|chegar|perto|proximo|direcao|localiza/.test(value)) return "navigation";
+    if (/fisica|volts|ohm|resistor|corrente|energia|forca|velocidade|circuit/.test(value)) return "science";
+    if (/open |turn |shut |volume|system|audio/.test(value)) return "system";
+    return "conversation";
+  }
+
+  pulseCommand(text = "", phase = "start") {
+    const kind = this.inferCommandVisual(text);
+    document.body.dataset.commandFx = kind;
+    document.body.classList.remove("command-fx-start", "command-fx-done");
+    void document.body.offsetWidth;
+    document.body.classList.add(phase === "done" ? "command-fx-done" : "command-fx-start");
+    clearTimeout(this._commandFxTimer);
+    this._commandFxTimer = setTimeout(() => {
+      document.body.classList.remove("command-fx-start", "command-fx-done");
+    }, phase === "done" ? 520 : 900);
+    return kind;
   }
 
 
@@ -374,11 +469,24 @@ export class JordanUI {
     const view = document.querySelector(`[data-view="${viewName}"]`);
     if (!view) return;
 
+    const previousView = this.currentView;
     this.currentView = viewName;
+    document.body.dataset.previousView = previousView || "core";
+    document.body.dataset.currentView = viewName;
+    document.body.classList.remove("view-transitioning");
+    void document.body.offsetWidth;
+    document.body.classList.add("view-transitioning");
 
     document.querySelectorAll(".view").forEach((item) => {
-      item.classList.toggle("active", item.dataset.view === viewName);
+      const active = item.dataset.view === viewName;
+      item.classList.toggle("active", active);
+      if (active) {
+        item.classList.remove("view-enter");
+        void item.offsetWidth;
+        item.classList.add("view-enter");
+      }
     });
+    setTimeout(() => document.body.classList.remove("view-transitioning"), 560);
 
     document.querySelectorAll("[data-view-target]").forEach((button) => {
       button.classList.toggle(

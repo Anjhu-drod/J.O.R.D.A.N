@@ -12,6 +12,7 @@ import {
   buildJordanProsody,
   chooseJordanBaseVoice
 } from "./jordanVoiceProfile.js";
+import { JordanTTSService, DEFAULT_JORDAN_TTS_ENDPOINT } from "./jordanTTSService.js";
 
 export class VoiceService {
   constructor({
@@ -50,12 +51,48 @@ export class VoiceService {
     this.languageMode = "pt";
     this.currentLanguage = "pt";
 
-    this.synthesisSupported =
+    this.browserSynthesisSupported =
       "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    this.neuralVoiceEnabled = true;
+    this.neuralTts = new JordanTTSService({
+      endpoint: DEFAULT_JORDAN_TTS_ENDPOINT,
+      enabled: true
+    });
+    // Mantemos esta flag para compatibilidade com o restante da JORDAN.
+    // Se o Voice Core cair, speak() tenta automaticamente o sintetizador do navegador.
+    this.synthesisSupported = this.browserSynthesisSupported || this.neuralVoiceEnabled;
   }
 
   get recognitionSupported() {
     return Boolean(this.Recognition);
+  }
+
+  configureNeuralVoice({ enabled = true, endpoint = DEFAULT_JORDAN_TTS_ENDPOINT } = {}) {
+    this.neuralVoiceEnabled = Boolean(enabled);
+    this.neuralTts.setEnabled(this.neuralVoiceEnabled);
+    this.neuralTts.setEndpoint(endpoint || DEFAULT_JORDAN_TTS_ENDPOINT);
+    this.synthesisSupported = this.browserSynthesisSupported || this.neuralVoiceEnabled;
+  }
+
+  async neuralVoiceHealth({ force = false } = {}) {
+    if (!this.neuralVoiceEnabled) return { ok: false, reason: "disabled" };
+    return this.neuralTts.health({ force });
+  }
+
+  get neuralVoiceEndpoint() {
+    return this.neuralTts.endpoint;
+  }
+
+  moodToNeuralEmotion(mood = "neutral", text = "") {
+    const map = {
+      neutral: "auto", happy: "happy", excited: "excited", curious: "curious",
+      playful: "playful", surprised: "surprised", serious: "serious",
+      concerned: "concerned", soft: "soft", whisper: "whisper", annoyed: "annoyed"
+    };
+    if (map[mood]) return map[mood];
+    if (String(text).includes("!")) return "excited";
+    if (String(text).includes("?")) return "curious";
+    return "auto";
   }
 
   async localRecognitionAvailability() {
@@ -341,7 +378,7 @@ export class VoiceService {
   }
 
   getVoices() {
-    if (!this.synthesisSupported) return [];
+    if (!this.browserSynthesisSupported) return [];
     return window.speechSynthesis.getVoices();
   }
 
@@ -350,7 +387,7 @@ export class VoiceService {
   }
 
   getVoiceProfileLabel() {
-    return JORDAN_VOICE_PROFILE.label;
+    return this.neuralVoiceEnabled ? this.neuralTts.label : JORDAN_VOICE_PROFILE.label;
   }
 
   async speak(text, {
@@ -361,7 +398,7 @@ export class VoiceService {
     allowBargeIn = true,
     language = this.currentLanguage
   } = {}) {
-    if (!this.synthesisSupported || !text) return;
+    if (!text) return;
 
     const token = ++this.speechToken;
     const shouldResume = this.alwaysListening;
@@ -376,10 +413,9 @@ export class VoiceService {
       try { this.recognition.stop(); } catch {}
     }
 
-    window.speechSynthesis.cancel();
+    if (this.browserSynthesisSupported) window.speechSynthesis.cancel();
+    this.neuralTts.stop();
     this.setSpeakingState(true);
-
-    const segments = buildJordanProsody(this.currentSpeechText, { rate, pitch, mood });
 
     if (allowBargeIn && shouldResume) {
       setTimeout(() => {
@@ -387,6 +423,48 @@ export class VoiceService {
       }, 380);
     }
 
+    // V0.9: primeiro tentamos a voz neural própria da JORDAN. O sintetizador
+    // do aparelho só existe como fallback para manter a assistente funcional.
+    if (this.neuralVoiceEnabled) {
+      try {
+        const health = await this.neuralTts.health();
+        if (health.ok && token === this.speechToken) {
+          await this.neuralTts.speak(this.currentSpeechText, {
+            emotion: this.moodToNeuralEmotion(mood, this.currentSpeechText),
+            volume,
+            onStart: () => this.onStatusChange("JORDAN VOICE CORE · falando..."),
+            onEnd: () => {}
+          });
+
+          if (token !== this.speechToken) return;
+          this.stopBargeInRecognition();
+          this.setSpeakingState(false);
+          this.onStatusChange("Sistema pronto.");
+          this.currentSpeechText = "";
+          if (shouldResume && this.alwaysListening && document.visibilityState === "visible") {
+            this.recognition = null;
+            this.scheduleRestart(250);
+          }
+          return;
+        }
+      } catch (error) {
+        console.warn("JORDAN Neural Voice fallback:", error);
+      }
+    }
+
+    if (!this.browserSynthesisSupported) {
+      this.stopBargeInRecognition();
+      this.setSpeakingState(false);
+      this.onStatusChange("Voice Core indisponível.");
+      this.currentSpeechText = "";
+      if (shouldResume && this.alwaysListening && document.visibilityState === "visible") {
+        this.recognition = null;
+        this.scheduleRestart(300);
+      }
+      return;
+    }
+
+    const segments = buildJordanProsody(this.currentSpeechText, { rate, pitch, mood });
     for (const segment of segments) {
       if (token !== this.speechToken) break;
       await this.speakSegment(segment, { volume, token, language });
@@ -431,9 +509,13 @@ export class VoiceService {
   }
 
   async singOriginal(lines = [], { volume = 1 } = {}) {
-    if (!this.synthesisSupported) return;
     const sequence = Array.isArray(lines) ? lines.filter(Boolean) : String(lines || "").split(/\n+/).filter(Boolean);
     if (!sequence.length) return;
+
+    if (this.neuralVoiceEnabled) {
+      return this.speak(sequence.join(" … "), { volume, mood: "playful", allowBargeIn: true, language: "pt" });
+    }
+    if (!this.browserSynthesisSupported) return;
 
     const token = ++this.speechToken;
     const shouldResume = this.alwaysListening;
@@ -462,7 +544,7 @@ export class VoiceService {
   }
 
   pronounceEnglish(text) {
-    if (!this.synthesisSupported || !text) return;
+    if (!this.browserSynthesisSupported || !text) return;
 
     const shouldResume = this.alwaysListening;
     if (this.recognition && this.listening) {
@@ -500,9 +582,9 @@ export class VoiceService {
   }
 
   cancelSpeech({ resumeListening = false } = {}) {
-    if (!this.synthesisSupported) return;
     ++this.speechToken;
-    window.speechSynthesis.cancel();
+    if (this.browserSynthesisSupported) window.speechSynthesis.cancel();
+    this.neuralTts.stop();
     this.stopBargeInRecognition();
     this.currentSpeechText = "";
     this.setSpeakingState(false);

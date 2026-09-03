@@ -1,0 +1,10 @@
+kokoro>=0.9.4
+torch
+numpy
+soundfile
+librosa
+scipy
+huggingface_hub
+fastapi
+uvicorn[standard]
+pydantic

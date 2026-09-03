@@ -132,6 +132,51 @@ export class LineageService {
     return normalizeName(confirmationName) === normalizeName(member.confirmationName);
   }
 
+  async readUserIdentityClaim(user = auth.currentUser, { server = false } = {}) {
+    if (!user) return null;
+    const claimRef = doc(firestore, "userIdentityClaims", user.uid);
+    let snap = null;
+    try {
+      snap = server ? await readServer(claimRef, "Mapa de identidade") : await getDocFromCache(claimRef);
+    } catch {
+      if (!server && navigator.onLine) {
+        try { snap = await readServer(claimRef, "Mapa de identidade"); } catch {}
+      }
+    }
+    if (!snap?.exists?.()) return null;
+    const data = snap.data() || {};
+    const member = getLineageMember(data.identityId);
+    if (!member || data.ownerUid !== user.uid) return null;
+
+    // O mapa acelera o login em novos dispositivos, mas o binding continua
+    // sendo a fonte de verdade e precisa pertencer ao mesmo Firebase UID.
+    const bindingRef = doc(firestore, "lineageBindings", member.id);
+    let bindingSnap = null;
+    try {
+      bindingSnap = server ? await readServer(bindingRef, "Identidade JORDAN") : await getDocFromCache(bindingRef);
+    } catch {
+      if (!server && navigator.onLine) {
+        try { bindingSnap = await readServer(bindingRef, "Identidade JORDAN"); } catch {}
+      }
+    }
+    if (!bindingSnap?.exists?.() || bindingSnap.data()?.ownerUid !== user.uid) return null;
+    return { member, binding: { id: member.id, ...bindingSnap.data() } };
+  }
+
+  async writeUserIdentityClaim(user, member) {
+    if (!user || !member) return;
+    const claimRef = doc(firestore, "userIdentityClaims", user.uid);
+    return Promise.resolve(setDoc(claimRef, {
+      ownerUid: user.uid,
+      identityId: member.id,
+      firstName: member.firstName,
+      updatedAt: serverTimestamp()
+    }, { merge: true })).catch((error) => {
+      console.warn("JORDAN Lineage: mapa de identidade aguardando sincronização.", error);
+      return false;
+    });
+  }
+
   async findOwnedBinding(user = auth.currentUser, { server = false } = {}) {
     if (!user) return null;
 
@@ -179,6 +224,16 @@ export class LineageService {
       return null;
     }
 
+    // V0.9: em outro PC/celular, tentamos primeiro um mapa direto por UID.
+    // Isso evita depender de cache local ou de cinco leituras sequenciais.
+    const direct = await this.readUserIdentityClaim(user).catch(() => null);
+    if (direct?.member) {
+      this.identity = direct.member;
+      this.binding = direct.binding;
+      this.repairProfileFromBinding(user, direct.member);
+      return direct.member;
+    }
+
     try {
       const profileRef = doc(firestore, "users", user.uid, "profile", "main");
       let profileSnap = null;
@@ -189,9 +244,19 @@ export class LineageService {
 
       const lineageId = profileSnap?.exists?.() ? profileSnap.data()?.lineageId : null;
       if (lineageId && LINEAGE_MEMBERS[lineageId]) {
-        this.identity = getLineageMember(lineageId);
-        this.binding = { identityId: lineageId, ownerUid: user.uid };
-        return this.identity;
+        const member = getLineageMember(lineageId);
+        const bindingRef = doc(firestore, "lineageBindings", lineageId);
+        let bindingSnap = null;
+        try { bindingSnap = await getDocFromCache(bindingRef); } catch {}
+        if (!bindingSnap?.exists?.() && navigator.onLine) {
+          try { bindingSnap = await readServer(bindingRef, "Identidade JORDAN"); } catch {}
+        }
+        if (bindingSnap?.exists?.() && bindingSnap.data()?.ownerUid === user.uid) {
+          this.identity = member;
+          this.binding = { id: lineageId, ...bindingSnap.data() };
+          this.writeUserIdentityClaim(user, member);
+          return this.identity;
+        }
       }
     } catch (error) {
       console.warn("JORDAN Lineage: perfil ainda indisponível.", error);
@@ -204,6 +269,7 @@ export class LineageService {
       this.identity = recovered.member;
       this.binding = recovered.binding;
       this.repairProfileFromBinding(user, recovered.member);
+      this.writeUserIdentityClaim(user, recovered.member);
       return recovered.member;
     }
 
@@ -295,7 +361,10 @@ export class LineageService {
       throw friendlyCloudError(error, "O Firestore não confirmou o vínculo da identidade.");
     }
 
-    onProgress?.("Sincronizando seu perfil…", 82);
+    onProgress?.("Registrando acesso multidispositivo…", 76);
+    await this.writeUserIdentityClaim(user, member);
+
+    onProgress?.("Sincronizando seu perfil…", 86);
 
     const profilePayload = {
       lineageId: member.id,

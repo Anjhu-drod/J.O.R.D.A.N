@@ -1,0 +1,151 @@
+{
+  "name": "JORDAN Spark V1",
+  "description": "Voz original feminina, jovem, brilhante, rápida e muito expressiva para PT-BR.",
+  "reference_direction": "Energia juvenil, carisma, velocidade e expressividade; não é uma cópia de personagem/dubladora específica.",
+  "engine": "Kokoro-82M",
+  "language": "pt-BR",
+  "sample_rate": 24000,
+  "base_repo": "hexgrad/Kokoro-82M",
+  "identity_mix": {
+    "pf_dora": 0.78,
+    "af_heart": 0.12,
+    "af_bella": 0.06,
+    "af_sky": 0.04
+  },
+  "emotion_mix": {
+    "neutral": {
+      "pf_dora": 0.78,
+      "af_heart": 0.12,
+      "af_bella": 0.06,
+      "af_sky": 0.04
+    },
+    "happy": {
+      "pf_dora": 0.72,
+      "af_heart": 0.16,
+      "af_bella": 0.08,
+      "af_sky": 0.04
+    },
+    "excited": {
+      "pf_dora": 0.66,
+      "af_heart": 0.12,
+      "af_bella": 0.18,
+      "af_sky": 0.04
+    },
+    "curious": {
+      "pf_dora": 0.75,
+      "af_heart": 0.1,
+      "af_bella": 0.05,
+      "af_sky": 0.1
+    },
+    "playful": {
+      "pf_dora": 0.68,
+      "af_heart": 0.07,
+      "af_bella": 0.15,
+      "af_sky": 0.1
+    },
+    "surprised": {
+      "pf_dora": 0.66,
+      "af_heart": 0.1,
+      "af_bella": 0.18,
+      "af_sky": 0.06
+    },
+    "serious": {
+      "pf_dora": 0.84,
+      "af_heart": 0.08,
+      "af_bella": 0.04,
+      "af_sky": 0.04
+    },
+    "concerned": {
+      "pf_dora": 0.8,
+      "af_heart": 0.1,
+      "af_bella": 0.04,
+      "af_sky": 0.06
+    },
+    "soft": {
+      "pf_dora": 0.84,
+      "af_heart": 0.1,
+      "af_bella": 0.0,
+      "af_sky": 0.06
+    },
+    "whisper": {
+      "pf_dora": 0.86,
+      "af_heart": 0.08,
+      "af_bella": 0.0,
+      "af_sky": 0.06
+    },
+    "annoyed": {
+      "pf_dora": 0.8,
+      "af_heart": 0.1,
+      "af_bella": 0.1,
+      "af_sky": 0.0
+    }
+  },
+  "prosody": {
+    "neutral": {
+      "speed": 1.12,
+      "pitch_semitones": 1.0,
+      "gain": 1.0,
+      "brightness": 0.08
+    },
+    "happy": {
+      "speed": 1.16,
+      "pitch_semitones": 1.35,
+      "gain": 1.02,
+      "brightness": 0.12
+    },
+    "excited": {
+      "speed": 1.21,
+      "pitch_semitones": 1.65,
+      "gain": 1.04,
+      "brightness": 0.16
+    },
+    "curious": {
+      "speed": 1.13,
+      "pitch_semitones": 1.25,
+      "gain": 1.0,
+      "brightness": 0.1
+    },
+    "playful": {
+      "speed": 1.19,
+      "pitch_semitones": 1.55,
+      "gain": 1.03,
+      "brightness": 0.14
+    },
+    "surprised": {
+      "speed": 1.17,
+      "pitch_semitones": 1.85,
+      "gain": 1.04,
+      "brightness": 0.16
+    },
+    "serious": {
+      "speed": 1.05,
+      "pitch_semitones": 0.45,
+      "gain": 0.98,
+      "brightness": 0.02
+    },
+    "concerned": {
+      "speed": 1.06,
+      "pitch_semitones": 0.7,
+      "gain": 0.97,
+      "brightness": 0.03
+    },
+    "soft": {
+      "speed": 1.0,
+      "pitch_semitones": 0.45,
+      "gain": 0.84,
+      "brightness": -0.02
+    },
+    "whisper": {
+      "speed": 0.96,
+      "pitch_semitones": 0.2,
+      "gain": 0.62,
+      "brightness": 0.1
+    },
+    "annoyed": {
+      "speed": 1.1,
+      "pitch_semitones": 0.65,
+      "gain": 1.02,
+      "brightness": 0.04
+    }
+  }
+}

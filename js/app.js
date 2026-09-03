@@ -72,6 +72,8 @@ let cloudState = { online: navigator.onLine, pending: false, fromCache: true, er
 let selectedLineageIdentityId = null;
 let voiceIdentityEnabled = false;
 let allowThirdPartyConversation = true;
+let neuralVoiceEnabled = true;
+let neuralVoiceEndpoint = "http://127.0.0.1:8787";
 
 const voice = new VoiceService({
   silenceMs: 2000,
@@ -223,6 +225,7 @@ async function initialize() {
   ui.startClock();
   bindEvents();
   ui.setAccountUser(authService.currentUser);
+  ui.setAccountProviders(authService.providerSummary(), authService.providerIds());
   ui.setCloudStatus(cloudState);
 
   const lineageIdentity = lineageService.currentIdentity;
@@ -297,7 +300,12 @@ async function initialize() {
   theme = await startupCloudValue("theme", () => getSetting("theme", "crimson"), "crimson");
   voiceIdentityEnabled = await startupCloudValue("voiceIdentityEnabled", () => getSetting("voiceIdentityEnabled", false), false);
   allowThirdPartyConversation = await startupCloudValue("allowThirdPartyConversation", () => getSetting("allowThirdPartyConversation", true), true);
+  neuralVoiceEnabled = await startupCloudValue("neuralVoiceEnabled", () => getSetting("neuralVoiceEnabled", true), true);
+  // O endpoint é específico do aparelho: PC pode usar localhost enquanto o celular
+  // aponta para um endpoint HTTPS remoto da mesma voz. Não sincronizamos essa URL.
+  neuralVoiceEndpoint = localStorage.getItem("jordan.voice-endpoint-v1") || "http://127.0.0.1:8787";
 
+  voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
   internet.setEnabled(internetEnabled);
@@ -307,6 +315,8 @@ async function initialize() {
   if (ui.elements.themeSelect) ui.elements.themeSelect.value = theme;
   if (ui.elements.voiceIdentityToggle) ui.elements.voiceIdentityToggle.checked = voiceIdentityEnabled;
   if (ui.elements.thirdPartyConversationToggle) ui.elements.thirdPartyConversationToggle.checked = allowThirdPartyConversation;
+  if (ui.elements.neuralVoiceToggle) ui.elements.neuralVoiceToggle.checked = neuralVoiceEnabled;
+  if (ui.elements.neuralVoiceEndpoint) ui.elements.neuralVoiceEndpoint.value = neuralVoiceEndpoint;
   voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
   updateVoiceIdentityStatus();
   ui.setLanguageStatus(languageMode, voice.currentLanguage);
@@ -351,8 +361,8 @@ async function initialize() {
   updateVoiceStatus();
   ui.setPersonality(assistant.getPersonality());
 
-  if (voice.synthesisSupported && "onvoiceschanged" in window.speechSynthesis) {
-    window.speechSynthesis.onvoiceschanged = updateVoiceStatus;
+  if (voice.browserSynthesisSupported && "onvoiceschanged" in window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => updateVoiceStatus();
   }
 
   ui.elements.pwaStatus.textContent = "serviceWorker" in navigator ? "Compatível" : "Não compatível";
@@ -448,15 +458,25 @@ async function refreshCreatorMemoryOverview() {
 }
 
 
-function updateVoiceStatus() {
+async function updateVoiceStatus({ force = false } = {}) {
   if (!voice.synthesisSupported) {
-    ui.elements.speechSynthesisStatus.textContent = "Indisponível";
+    if (ui.elements.speechSynthesisStatus) ui.elements.speechSynthesisStatus.textContent = "Indisponível";
+    ui.setNeuralVoiceStatus({ ok: false, enabled: false });
     return;
   }
 
-  const selected = voice.chooseJordanVoice?.();
-  const base = selected?.name ? ` · base: ${selected.name}` : "";
-  ui.elements.speechSynthesisStatus.textContent = `${voice.getVoiceProfileLabel?.() || "JORDAN Spark"}${base}`;
+  let health = { ok: false, enabled: neuralVoiceEnabled, reason: "disabled" };
+  if (neuralVoiceEnabled) {
+    health = await voice.neuralVoiceHealth({ force }).catch((error) => ({ ok: false, enabled: true, error }));
+    health.enabled = true;
+  }
+  ui.setNeuralVoiceStatus(health);
+
+  if (!health.ok && ui.elements.speechSynthesisStatus) {
+    const selected = voice.chooseJordanVoice?.();
+    const base = selected?.name ? ` · fallback: ${selected.name}` : " · fallback do dispositivo";
+    ui.elements.speechSynthesisStatus.textContent = `JORDAN Spark${base}`;
+  }
 }
 
 function renderSystemCommandLearning() {
@@ -654,6 +674,33 @@ function bindEvents() {
     ui.toast(result.status === "available" ? "Reconhecimento PT-BR local ativado." : "Este navegador continuará usando o reconhecimento normal.");
   });
 
+  ui.elements.neuralVoiceToggle?.addEventListener("change", async (event) => {
+    registerInteraction();
+    neuralVoiceEnabled = Boolean(event.target.checked);
+    await setSetting("neuralVoiceEnabled", neuralVoiceEnabled);
+    voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
+    await updateVoiceStatus({ force: true });
+    ui.toast(neuralVoiceEnabled ? "JORDAN Voice Core ativado." : "Voice Core desativado. Vou usar o fallback do dispositivo.", "JORDAN VOICE");
+  });
+
+  ui.elements.saveVoiceEndpointButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const value = ui.elements.neuralVoiceEndpoint?.value?.trim() || "http://127.0.0.1:8787";
+    neuralVoiceEndpoint = value.replace(/\/+$/, "");
+    localStorage.setItem("jordan.voice-endpoint-v1", neuralVoiceEndpoint);
+    voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
+    await updateVoiceStatus({ force: true });
+    ui.toast("Endpoint da voz salvo neste perfil JORDAN.", "JORDAN VOICE");
+  });
+
+  ui.elements.checkVoiceCoreButton?.addEventListener("click", async () => {
+    registerInteraction();
+    ui.setNeuralVoiceStatus({ ok: false, enabled: neuralVoiceEnabled, reason: "checking" });
+    const health = await voice.neuralVoiceHealth({ force: true });
+    ui.setNeuralVoiceStatus({ ...health, enabled: neuralVoiceEnabled });
+    ui.toast(health.ok ? "JORDAN Spark Neural V1 está respondendo." : "Voice Server não respondeu. A voz do dispositivo continuará como fallback.", "JORDAN VOICE");
+  });
+
   ui.elements.testVoiceButton.addEventListener("click", async () => {
     registerInteraction();
     if (voice.isSpeaking) voice.cancelSpeech();
@@ -767,6 +814,36 @@ function bindEvents() {
   });
 
   ui.elements.refreshLineageMemoryButton?.addEventListener("click", () => refreshCreatorMemoryOverview());
+
+  ui.elements.linkGoogleAccountButton?.addEventListener("click", async () => {
+    registerInteraction();
+    ui.elements.linkGoogleAccountButton.disabled = true;
+    try {
+      const user = await authService.linkGoogleToCurrentUser();
+      ui.setAccountUser(user);
+      ui.setAccountProviders(authService.providerSummary(user), authService.providerIds(user));
+      ui.toast("Google vinculado ao mesmo Firebase UID. Você pode usar esta JORDAN ID em outros aparelhos.", "JORDAN ID");
+    } catch (error) {
+      ui.toast(friendlyAuthError(error), "JORDAN ID");
+      ui.setAccountProviders(authService.providerSummary(), authService.providerIds());
+    }
+  });
+
+  ui.elements.linkPasswordAccountButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const password = ui.elements.linkPasswordInput?.value || "";
+    ui.elements.linkPasswordAccountButton.disabled = true;
+    try {
+      const user = await authService.linkPasswordToCurrentUser(password);
+      if (ui.elements.linkPasswordInput) ui.elements.linkPasswordInput.value = "";
+      ui.setAccountUser(user);
+      ui.setAccountProviders(authService.providerSummary(user), authService.providerIds(user));
+      ui.toast("Senha vinculada ao mesmo UID. Agora este e-mail + senha pode entrar em outros dispositivos.", "JORDAN ID");
+    } catch (error) {
+      ui.toast(friendlyAuthError(error), "JORDAN ID");
+      ui.setAccountProviders(authService.providerSummary(), authService.providerIds());
+    }
+  });
 
   ui.elements.notificationButton.addEventListener("click", async () => {
     registerInteraction();
@@ -890,6 +967,8 @@ async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
   ui.setInterimTranscript("");
   ui.setStatus("Processando...");
   telemetry.setExecution("processing");
+  const visualKind = ui.pulseCommand(text, "start");
+  ui.playCinematic(visualKind, visualKind.toUpperCase(), "Comando recebido · analisando intenção", 420);
 
   if (fromVoice && voiceIdentityEnabled && !speaker?.authorized) {
     const score = Math.round((speaker?.score || 0) * 100);
@@ -1030,6 +1109,7 @@ async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
     ui.addMessage("JORDAN", `Ocorreu um erro ao processar isso: ${error.message}`);
     ui.setStatus("Erro.");
   } finally {
+    ui.pulseCommand(text, "done");
     if (!voice.isSpeaking) telemetry.setExecution("idle");
     resetIdleTimer();
   }
@@ -1319,10 +1399,12 @@ async function presentAuthenticatedIdentity(user) {
   ui.setCreatorMode(lineageService.isCreator);
   voiceIdentityService.setIdentity(identity.id);
   ui.setAccountUser(user);
+  ui.setAccountProviders(authService.providerSummary(user), authService.providerIds(user));
   ui.setAuthMessage(`${identity.firstName} reconhecido. Carregando sua JORDAN...`, "success");
 
   try {
     await initialize();
+    await ui.playCinematic("boot", `BEM-VINDO, ${identity.firstName.toUpperCase()}`, "Voice · Memory · Cloud · Command Core online", 880);
     ui.hideAuthGate();
     return true;
   } catch (error) {
@@ -1564,6 +1646,7 @@ async function boot() {
   ui.renderIdentityChoices(listLineageMembers());
 
   try {
+    await authService.waitUntilReady();
     await authService.consumeRedirectResult();
   } catch (error) {
     ui.setAuthMessage(friendlyAuthError(error), "error");

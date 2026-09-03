@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.8.1" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.9.0" />
 </head>
 <body data-theme="crimson" class="auth-locked">
   <div class="fx-grid"></div>
@@ -21,6 +21,18 @@
   <div class="fx-particles" aria-hidden="true"></div>
   <div class="fx-cursor-glow" aria-hidden="true"></div>
   <div class="fx-horizon" aria-hidden="true"></div>
+
+  <div id="jordanCinematicLayer" class="jordan-cinematic-layer" aria-hidden="true">
+    <div class="cinematic-hexfield"></div>
+    <div class="cinematic-scan"></div>
+    <div class="cinematic-core"><i></i><i></i><i></i><span>J</span></div>
+    <div class="cinematic-copy">
+      <small id="cinematicKicker">JORDAN / EXECUTION CORE</small>
+      <strong id="cinematicTitle">INITIALIZING</strong>
+      <span id="cinematicSubtitle">Neural systems synchronized</span>
+    </div>
+    <div id="cinematicEqualizer" class="cinematic-equalizer"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
 
   <section id="authGate" class="auth-gate" aria-label="JORDAN Lineage Gateway">
     <div class="auth-nebula"></div>
@@ -87,7 +99,7 @@
               </div>
             </label>
             <div class="auth-options">
-              <label class="auth-remember"><input id="authRememberLogin" type="checkbox" checked /><span></span>Permanecer conectado</label>
+              <label class="auth-remember"><input id="authRememberLogin" type="checkbox" checked disabled /><span></span>Sessão persistente neste dispositivo</label>
               <button id="authForgotPassword" class="text-button" type="button">ESQUECI A SENHA</button>
             </div>
             <button id="authLoginButton" class="auth-primary" type="submit"><span>ENTRAR NA JORDAN</span><b>→</b></button>
@@ -398,11 +410,23 @@
               <span>UID <b id="accountUid">—</b></span>
               <span>SYNC <b id="accountSyncBadge">—</b></span>
             </div>
+            <div class="account-provider-core">
+              <span>ACESSOS VINCULADOS</span>
+              <strong id="accountProviders">FIREBASE AUTH</strong>
+              <p class="system-description">Vincule Google e uma senha ao mesmo UID para entrar com a mesma JORDAN ID simultaneamente no PC, celular e outros dispositivos.</p>
+              <div class="account-link-grid">
+                <button id="linkGoogleAccountButton" class="hud-button small">VINCULAR GOOGLE</button>
+                <div class="account-password-link">
+                  <input id="linkPasswordInput" class="system-input" type="password" minlength="6" autocomplete="new-password" placeholder="Senha multidispositivo" />
+                  <button id="linkPasswordAccountButton" class="hud-button small">VINCULAR SENHA</button>
+                </div>
+              </div>
+            </div>
             <div class="backup-actions">
               <button id="syncNowButton" class="hud-button small">SINCRONIZAR AGORA</button>
               <button id="logoutButton" class="hud-button small danger-outline">SAIR DA CONTA</button>
             </div>
-            <p class="system-description">Seu login permanece salvo neste dispositivo. Ao sair, a próxima abertura volta para a tela JORDAN ID.</p>
+            <p class="system-description">A sessão usa persistência LOCAL: você só precisa entrar uma vez por dispositivo e pode manter a mesma conta aberta em vários aparelhos ao mesmo tempo.</p>
           </article>
           <article class="hud-panel system-card lineage-card">
             <span>LINEAGE IDENTITY</span>
@@ -426,11 +450,20 @@
             <span>RECONHECIMENTO DE VOZ</span>
             <strong id="speechRecognitionStatus">Verificando...</strong>
           </article>
-          <article class="hud-panel system-card voice-card">
-            <span>VOICE PROFILE</span>
-            <strong id="speechSynthesisStatus">JORDAN Spark · PT-BR</strong>
-            <p class="system-description">Perfil original jovem, agudo, rápido e expressivo. A prosódia é definida pela JORDAN; o timbre-base ainda depende do sintetizador disponível até integrarmos um modelo neural próprio.</p>
-            <button id="testVoiceButton" class="hud-button small">TESTAR VOZ</button>
+          <article class="hud-panel system-card voice-card neural-voice-card">
+            <span>JORDAN VOICE CORE</span>
+            <strong id="speechSynthesisStatus">JORDAN Spark Neural V1</strong>
+            <div id="neuralVoiceStatus" class="voice-core-status"><i></i><b>VERIFICANDO VOICE SERVER...</b></div>
+            <label class="hud-toggle compact"><input id="neuralVoiceToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR VOZ PRÓPRIA</b></label>
+            <label class="voice-endpoint-label">VOICE SERVER URL
+              <input id="neuralVoiceEndpoint" class="system-input" type="url" spellcheck="false" value="http://127.0.0.1:8787" placeholder="https://voice.seudominio.com" />
+            </label>
+            <div class="backup-actions">
+              <button id="saveVoiceEndpointButton" class="hud-button small">SALVAR ENDPOINT</button>
+              <button id="checkVoiceCoreButton" class="hud-button small">TESTAR CONEXÃO</button>
+              <button id="testVoiceButton" class="hud-button small primary">OUVIR JORDAN</button>
+            </div>
+            <p class="system-description">A V0.9 tenta primeiro a voz neural própria JORDAN Spark. Se o Voice Server estiver desligado, o sintetizador do aparelho entra apenas como fallback. No PC, 127.0.0.1 usa o servidor local; no celular, configure um endpoint HTTPS acessível pelo aparelho.</p>
           </article>
           <article class="hud-panel system-card personality-card">
             <span>PERSONALIDADE</span>
@@ -786,7 +819,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.8.1";
+    const JORDAN_ASSET_VERSION = "0.9.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

@@ -88,3 +88,24 @@ JORDAN Music e Voice Lock continuam locais por dispositivo. Arquivos de áudio e
 8. Veja o calendário mensal.
 9. Abra SYS e teste o Voice Lock.
 10. Em outro dispositivo, entre na mesma conta/identidade e confira a sincronização.
+
+---
+
+## V0.9 — vários dispositivos / mesmo e-mail
+
+A identidade da linhagem pertence ao **Firebase UID**, não ao computador ou celular. O mesmo UID pode permanecer autenticado simultaneamente em vários dispositivos.
+
+A V0.9 adiciona a coleção:
+
+`userIdentityClaims/{uid}`
+
+Ela funciona como um mapa rápido UID -> identidade e evita depender do cache de outro dispositivo. Publique novamente o `firestore.rules` fornecido na V0.9.
+
+### Importante sobre Google e senha
+
+Google e E-mail/Senha são provedores diferentes. Para conseguir usar qualquer um deles sem criar outra conta, abra `SYS > JORDAN ID` e vincule os dois métodos à **mesma conta Firebase**.
+
+- Conta criada com E-mail/Senha: use `VINCULAR GOOGLE`.
+- Conta criada com Google: informe uma senha em `Senha multidispositivo` e use `VINCULAR SENHA`.
+
+Depois disso, PC e celular podem entrar pelo mesmo UID usando Google ou E-mail/Senha.
