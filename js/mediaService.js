@@ -1,110 +1,114 @@
-import { SpotifyService } from "./spotifyService.js";
-
-const RANDOM_QUERIES = [
-  "anime openings", "rock brasileiro", "lofi hip hop", "rap geek", "trilha sonora anime",
-  "indie brasileiro", "rock alternativo", "instrumental cinematic", "japanese city pop"
-];
+import { JordanMusicService } from "./jordanMusicService.js";
 
 export class MediaService {
   constructor() {
-    this.defaultProvider = "spotify";
-    this.spotify = new SpotifyService();
+    this.music = new JordanMusicService();
   }
 
-  setDefaultProvider(provider = "spotify") {
-    this.defaultProvider = ["spotify", "youtubeMusic", "youtube"].includes(provider)
-      ? provider
-      : "spotify";
+  async initialize() {
+    return this.music.initialize();
   }
 
-  configureSpotify(options = {}) {
-    this.spotify.configure(options);
+  setCallbacks(callbacks = {}) {
+    this.music.setCallbacks(callbacks);
   }
 
-  async handleSpotifyCallback() {
-    return this.spotify.handleCallback();
+  async importFiles(files) {
+    return this.music.importFiles(files);
   }
 
-  get spotifyConfigured() {
-    return this.spotify.configured;
+  async getLibrary() {
+    return this.music.allTracks();
   }
 
-  get spotifyConnected() {
-    return this.spotify.connected;
+  async searchLibrary(query = "") {
+    return this.music.search(query);
   }
 
-  async connectSpotify() {
-    return this.spotify.beginLogin();
+  async clearLibrary() {
+    return this.music.clearLibrary();
   }
 
-  disconnectSpotify() {
-    this.spotify.disconnect();
+  async removeTrack(id) {
+    return this.music.removeTrack(id);
   }
 
-  randomQuery() {
-    return RANDOM_QUERIES[Math.floor(Math.random() * RANDOM_QUERIES.length)];
+  async playTrack(id) {
+    return this.music.playById(id);
   }
 
-  buildMusicSearch(query, provider = this.defaultProvider) {
-    const clean = String(query || "").trim();
-    if (!clean) return null;
+  async togglePlayPause() {
+    return this.music.togglePlayPause();
+  }
 
-    if (provider === "spotify") {
-      return `https://open.spotify.com/search/${encodeURIComponent(clean)}`;
-    }
+  pause() {
+    this.music.pause();
+  }
 
-    if (provider === "youtube") {
-      return `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}`;
-    }
+  resume() {
+    return this.music.resume();
+  }
 
-    return `https://music.youtube.com/search?q=${encodeURIComponent(clean)}`;
+  next() {
+    return this.music.next();
+  }
+
+  previous() {
+    return this.music.previous();
+  }
+
+  toggleShuffle() {
+    return this.music.toggleShuffle();
+  }
+
+  cycleRepeat() {
+    return this.music.cycleRepeat();
+  }
+
+  setVolume(value) {
+    this.music.setVolume(value);
+  }
+
+  setDucked(active) {
+    this.music.setDucked(active);
+  }
+
+  seekPercent(percent) {
+    this.music.seekPercent(percent);
+  }
+
+  toggleFavorite() {
+    return this.music.toggleFavorite();
+  }
+
+  getState() {
+    return this.music.getState();
   }
 
   extractMusicQuery(input = "") {
     return String(input)
       .replace(/^\s*jordan\s*[,;:!\-]?\s*/i, "")
       .replace(/\b(toque|toca|tocar|coloque|coloca|reproduza|reproduzir|ponha|poe|põe|bote)\b/gi, " ")
-      .replace(/\b(uma|a)?\s*(musica|música|playlist|faixa|track)\b/gi, " ")
-      .replace(/\b(no|na)\s+(spotify|youtube music|youtube)\b/gi, " ")
+      .replace(/\b(uma|a|alguma)?\s*(musica|música|playlist|faixa|track)\b/gi, " ")
+      .replace(/^\s*(?:do|da|de)\s+/i, "")
       .replace(/\s+/g, " ")
       .trim();
   }
 
-  providerFromText(input = "") {
-    const text = String(input).toLowerCase();
-    if (text.includes("spotify")) return "spotify";
-    if (text.includes("youtube music")) return "youtubeMusic";
-    if (text.includes("youtube")) return "youtube";
-    return this.defaultProvider;
-  }
-
   async findPlayableTrack(query, { random = false } = {}) {
-    const actualQuery = random || !String(query || "").trim() ? this.randomQuery() : String(query).trim();
+    const library = await this.getLibrary();
+    if (!library.length) return { status: "library-empty", query: String(query || "").trim() };
 
-    if (this.defaultProvider !== "spotify") {
-      return {
-        status: "external",
-        query: actualQuery,
-        provider: this.defaultProvider,
-        url: this.buildMusicSearch(actualQuery, this.defaultProvider)
-      };
+    if (random || !String(query || "").trim()) {
+      const track = this.music.randomTrack();
+      return { status: "ready", query: "aleatória", track };
     }
 
-    if (!this.spotifyConfigured) {
-      return { status: "needs-config", query: actualQuery };
+    const matches = await this.searchLibrary(String(query).trim());
+    if (!matches.length) {
+      return { status: "not-found", query: String(query).trim() };
     }
 
-    if (!this.spotifyConnected) {
-      return { status: "needs-login", query: actualQuery };
-    }
-
-    const tracks = await this.spotify.searchTrack(actualQuery, 5);
-    if (!tracks.length) return { status: "not-found", query: actualQuery };
-
-    const track = random
-      ? tracks[Math.floor(Math.random() * tracks.length)]
-      : tracks[0];
-
-    return { status: "ready", query: actualQuery, track, tracks };
+    return { status: "ready", query: String(query).trim(), track: matches[0], tracks: matches };
   }
 }

@@ -1,103 +1,77 @@
-# JORDAN V0.6 — PATCH sobre a V0.5
+# JORDAN V0.6.1 — JORDAN Music
 
-Esta versão amplia a JORDAN como assistente geral, sem transformar o projeto em outro sistema do zero.
+Correção incremental feita em cima da V0.6.
 
-## Destaques
+## Correção principal
 
-- Ordens básicas em português por verbo:
-  - diga / fale / repita
-  - pergunte
-  - pesquise / procure / busque
-  - toque / reproduza
-  - cante
-  - abra apps/sites conhecidos
-  - como chegar / rota / me leve
-  - perguntas reconhecidas de física e circuitos
-- Player lateral integrado com Spotify via OAuth PKCE.
-- Pesquisa de faixas pelo Spotify Web API e player incorporado na interface.
-- Painel auxiliar lateral com MEDIA, RESEARCH, NAV e PHYSICS LAB.
-- Rotas com GPS + Google Maps e geocodificação online.
-- Abertura de YouTube, X, Instagram, Spotify, WhatsApp, TikTok, Discord, Reddit, GitHub, Maps e Gmail.
-- Physics Lab offline:
-  - Lei de Ohm
-  - potência elétrica
-  - resistores em série/paralelo
-  - energia cinética
-  - momento linear
-  - força
-  - estimativa hidrodinâmica didática para perguntas como corrida sobre água
-- Pesquisa online explícita por “pesquise...”.
-- Mais temas visuais:
-  - Crimson Core
-  - Eclipse
-  - Sakura Protocol
-  - Cursed Energy
-  - Cyber Shinobi
-- Novo HUD decorativo com caracteres, radar e painéis sci-fi.
-- Reconhecimento de fala local experimental quando o navegador oferece SpeechRecognition on-device.
-- Novos comandos de sistema em inglês:
-  - Open the player
-  - Open the research
-  - Open the navigation
-  - Open the lab
-  - Close the panel
+A integração do Spotify foi removida do player. A JORDAN agora possui uma biblioteca e um player próprios chamados **JORDAN Music**.
 
-## Música e canto
+## Como funciona o JORDAN Music
 
-A JORDAN não baixa nem copia letras integrais de músicas comerciais para reproduzi-las com a própria voz.
+1. Abra `SYS`.
+2. Em `JORDAN MUSIC`, clique em `+ ADICIONAR MÚSICAS`.
+3. Selecione arquivos de áudio do seu PC/celular.
+4. Os arquivos são salvos no IndexedDB do próprio navegador/dispositivo.
+5. Abra o painel `MEDIA` para ver biblioteca, player, volume, progresso, shuffle e repeat.
+6. Você também pode falar/escrever:
+   - `Toque uma música qualquer.`
+   - `Toque Numb.`
+   - `Toque uma música do Kamaitachi.`
 
-Quando você pede para tocar uma música, ela usa o player integrado com Spotify.
+A pesquisa acontece na biblioteca local. Se a faixa não estiver importada, a JORDAN avisa em vez de abrir Spotify/YouTube automaticamente.
 
-Quando você pede para cantar algo sem especificar uma obra comercial, ela usa um pequeno improviso original criado para a própria JORDAN e aplica uma prosódia de “canto” simples no SpeechSynthesis.
+### Nome dos arquivos
 
-## Configurar Spotify
+Para organizar automaticamente artista e título, prefira:
 
-1. Entre em https://developer.spotify.com/dashboard
-2. Crie um app.
-3. Copie o Client ID.
-4. No app do Spotify, adicione como Redirect URI exatamente a URL onde a JORDAN roda.
+`Artista - Música.mp3`
 
-Exemplo GitHub Pages:
+Exemplo:
 
-https://SEU-USUARIO.github.io/JORDAN/
+`Linkin Park - Numb.mp3`
 
-Exemplo local:
+## Controles do player
 
-http://127.0.0.1:5500/
+- Play/Pause
+- Próxima
+- Anterior
+- Shuffle
+- Repeat off / all / one
+- Volume
+- Timeline / seek
+- Favorita
+- Busca na biblioteca
 
-Observação: o Spotify não aceita `localhost` como Redirect URI; use 127.0.0.1 no teste local.
+Quando a JORDAN fala, a música abaixa temporariamente para a voz ficar clara e volta ao volume anterior ao terminar.
 
-5. Na JORDAN abra SYS > MÍDIA / PLAYER.
-6. Cole o Client ID.
-7. Clique SALVAR CLIENT ID.
-8. Clique CONECTAR SPOTIFY.
-9. Autorize a JORDAN.
+## Comandos de sistema em inglês adicionados
 
-Não existe Client Secret no frontend. A autenticação usa Authorization Code + PKCE.
+- `Pause the music`
+- `Play the music`
+- `Next track`
+- `Previous track`
+- `Shuffle the music`
 
-## Exemplos
+Eles aparecem automaticamente na lista de comandos do SYS com o botão de pronúncia.
 
-- Diga “boa noite, mundo”.
-- Me pergunte alguma coisa.
-- Pesquise buracos negros.
-- Abra o YouTube.
-- Toque Numb Linkin Park.
-- Toque uma música qualquer.
-- Cante alguma coisa.
-- Como chegar no shopping?
-- Me leve para o posto mais próximo.
-- 12 volts e 6 ohms, qual é a corrente?
-- Quanto dá 10 e 20 ohms em paralelo?
-- Qual a velocidade uma pessoa de 105 quilos teria que correr para correr sobre a água?
+## Importante sobre armazenamento
 
-## Offline
+A biblioteca é local por dispositivo/navegador. Músicas importadas no PC não aparecem automaticamente no iPhone. Sincronização entre aparelhos deve ser feita futuramente pela JORDAN API, mas arquivos musicais grandes devem ter uma estratégia separada para não sobrecarregar o servidor.
 
-A interface, calendário, memória, histórias, parser de comandos e Physics Lab continuam disponíveis pelo cache PWA.
+O navegador também pode limitar ou limpar armazenamento local em certas situações. Mantenha os arquivos originais guardados no aparelho.
 
-O reconhecimento de voz normal pode depender da internet em alguns navegadores. A V0.6 detecta a API experimental de reconhecimento local e oferece o botão PREPARAR PT-BR LOCAL quando houver suporte.
+## Arquivo que deve ser APAGADO da V0.6
 
-Pesquisa web, Spotify, geocodificação e rotas externas precisam de internet.
+`js/spotifyService.js`
 
-## Voz
+Ele não é mais importado nem usado.
 
-A voz atual ainda usa SpeechSynthesis como base. Para ter exatamente a mesma voz da JORDAN em PC, iPhone e Android, o próximo passo correto é um motor neural próprio/original servido pela JORDAN API ou embarcado localmente. Não é possível garantir um timbre fixo entre aparelhos usando somente as vozes fornecidas por cada navegador.
+## Bug da V0.6 corrigido
+
+Alguns blocos adicionados à V0.6 ficaram com sequências literais `\\n` dentro de `app.js` e `voice.js`. Esses trechos foram restaurados para quebras de linha reais.
+
+## Cache
+
+Service Worker:
+
+`jordan-v0.6.1`

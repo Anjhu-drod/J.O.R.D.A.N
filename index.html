@@ -294,19 +294,16 @@
             <p class="system-description">Lei de Ohm, potência, resistores, energia cinética, força, momento e estimativas físicas. Se não reconhecer o problema e a internet estiver ativa, tenta pesquisar.</p>
           </article>
           <article class="hud-panel system-card media-card">
-            <span>MÍDIA / PLAYER</span>
-            <strong id="spotifyStatus">Spotify não configurado</strong>
-            <select id="mediaProviderSelect" aria-label="Provedor de música">
-              <option value="spotify">Spotify · player interno</option>
-              <option value="youtubeMusic">YouTube Music · link</option>
-              <option value="youtube">YouTube · link</option>
-            </select>
-            <input id="spotifyClientIdInput" class="system-input" type="text" autocomplete="off" placeholder="Spotify Client ID" />
+            <span>JORDAN MUSIC</span>
+            <strong id="musicLibraryStatus">Biblioteca local · 0 faixas</strong>
             <div class="backup-actions">
-              <button id="spotifySaveButton" class="hud-button small">SALVAR CLIENT ID</button>
-              <button id="spotifyConnectButton" class="hud-button small">CONECTAR SPOTIFY</button>
+              <label class="hud-button small file-button">
+                + ADICIONAR MÚSICAS
+                <input id="musicImportInput" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.opus,.flac,.webm" multiple />
+              </label>
+              <button id="musicClearButton" class="hud-button small">LIMPAR BIBLIOTECA</button>
             </div>
-            <p class="system-description">Com um Client ID do Spotify, a JORDAN pesquisa faixas e abre um player dentro da interface. O login usa PKCE, então nenhum Client Secret fica no GitHub.</p>
+            <p class="system-description">Player próprio da JORDAN. Os arquivos escolhidos ficam salvos localmente neste navegador/dispositivo e podem ser tocados offline. Nomeie arquivos como “Artista - Música.mp3” para a organização ficar melhor.</p>
           </article>
           <article class="hud-panel system-card theme-card">
             <span>VISUAL CORE</span>
@@ -384,11 +381,44 @@
 
     <section class="companion-panel active" data-companion-panel="media">
       <div id="mediaArtwork" class="media-artwork"><span>♫</span></div>
-      <span class="hud-label">NOW PLAYING</span>
+      <span class="hud-label">JORDAN MUSIC · NOW PLAYING</span>
       <h3 id="mediaTrackTitle">Nenhuma faixa</h3>
-      <p id="mediaTrackArtist" class="system-description">Conecte o Spotify ou peça uma música.</p>
-      <div id="spotifyEmbedContainer" class="spotify-embed-container"></div>
-      <a id="mediaExternalLink" class="chat-action-link hidden" target="_blank" rel="noopener noreferrer">ABRIR FAIXA</a>
+      <p id="mediaTrackArtist" class="system-description">Adicione músicas à biblioteca local.</p>
+
+      <div class="jordan-music-progress">
+        <input id="musicProgress" type="range" min="0" max="100" step="0.1" value="0" aria-label="Progresso da música" />
+        <div class="music-time-row">
+          <span id="musicCurrentTime">0:00</span>
+          <span id="musicDuration">0:00</span>
+        </div>
+      </div>
+
+      <div class="music-main-controls">
+        <button id="musicShuffleButton" class="music-icon-button" type="button" title="Shuffle">⤨</button>
+        <button id="musicPreviousButton" class="music-icon-button" type="button" title="Anterior">◀◀</button>
+        <button id="musicPlayPauseButton" class="music-play-button" type="button" title="Play/Pause">▶</button>
+        <button id="musicNextButton" class="music-icon-button" type="button" title="Próxima">▶▶</button>
+        <button id="musicRepeatButton" class="music-icon-button" type="button" title="Repeat">↻</button>
+      </div>
+
+      <div class="music-secondary-controls">
+        <button id="musicFavoriteButton" class="hud-button small" type="button">☆ FAVORITA</button>
+        <label class="music-volume-control">VOL
+          <input id="musicVolume" type="range" min="0" max="1" step="0.01" value="0.82" />
+        </label>
+      </div>
+
+      <div class="music-library-head">
+        <span class="hud-label">BIBLIOTECA LOCAL</span>
+        <label class="hud-button small file-button">
+          + IMPORTAR
+          <input id="musicImportInputCompanion" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.opus,.flac,.webm" multiple />
+        </label>
+      </div>
+      <input id="musicSearchInput" class="system-input" type="search" placeholder="Buscar música ou artista..." autocomplete="off" />
+      <div id="musicLibraryList" class="music-library-list">
+        <div class="music-empty-state">Nenhuma música importada.</div>
+      </div>
     </section>
 
     <section class="companion-panel" data-companion-panel="research">
@@ -526,7 +556,7 @@
           <p>“Toque Numb Linkin Park.”</p>
           <p>“Toque uma música qualquer.”</p>
           <p>“Cante alguma coisa.” → improviso original.</p>
-          <p>Configure o Spotify Client ID em SYS.</p>
+          <p>Adicione arquivos de áudio no JORDAN Music e eles ficam disponíveis offline neste dispositivo.</p>
         </section>
         <section>
           <span>NAVEGAÇÃO</span>

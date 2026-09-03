@@ -31,8 +31,8 @@ const SYSTEM_QA = [
     answer: "Sim. Nesta versão eu já consigo consultar fontes públicas da internet, como a Wikipedia, e também usar localização para procurar lugares próximos quando você autorizar. Informações mais complexas ainda vão melhorar quando o JORDAN API ganhar um modelo de IA."
   },
   {
-    keywords: ["como tocar musica", "player de musica", "player do spotify", "conectar spotify"],
-    answer: "Abra SYS, vá em MÍDIA / PLAYER, cole seu Spotify Client ID e conecte a conta. Depois você pode dizer coisas como 'toque Numb Linkin Park' ou 'toque uma música qualquer'."
+    keywords: ["como tocar musica", "player de musica", "jordan music", "biblioteca de musica", "adicionar musica"],
+    answer: "Abra SYS e vá em JORDAN MUSIC para importar arquivos de áudio do seu aparelho. Eles ficam salvos localmente e podem tocar offline. Depois diga, por exemplo, 'toque Numb' ou 'toque uma música qualquer'."
   },
   {
     keywords: ["voce abre aplicativos", "pode abrir aplicativos", "abrir youtube", "abrir apps"],

@@ -2102,17 +2102,6 @@ body[data-theme="shinobi"] {
 .media-artwork span { font-size: 2.6rem; color: var(--red); z-index: 2; }
 .media-artwork img { width: 100%; height: 100%; object-fit: cover; position: relative; z-index: 3; }
 
-.spotify-embed-container {
-  margin: 16px 0 11px;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 10px;
-}
-
-.spotify-embed-container iframe {
-  display: block;
-  border-radius: 10px;
-}
 
 .nav-radar {
   width: 150px;
@@ -2202,4 +2191,183 @@ body[data-theme="shinobi"] {
   .companion-dock.open { transform: translateY(0); }
   .companion-tabs { position: sticky; top: -1px; z-index: 2; background: var(--panel-strong); padding: 5px 0; }
   .fx-runes i { font-size: 3rem; }
+}
+
+/* ===== V0.6.1 / JORDAN Music ===== */
+.jordan-music-progress {
+  margin: 16px 0 8px;
+}
+
+.jordan-music-progress input,
+.music-volume-control input {
+  width: 100%;
+  accent-color: var(--red);
+}
+
+.music-time-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .62rem;
+  letter-spacing: .08em;
+}
+
+.music-main-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 58px 1fr 1fr;
+  align-items: center;
+  gap: 7px;
+  margin: 13px 0 11px;
+}
+
+.music-icon-button,
+.music-play-button {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.025);
+  color: var(--muted);
+  min-height: 42px;
+  cursor: pointer;
+  transition: .18s ease;
+}
+
+.music-play-button {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  justify-self: center;
+  color: #fff;
+  border-color: var(--line-strong);
+  background:
+    radial-gradient(circle at 45% 40%, color-mix(in srgb, var(--red) 32%, transparent), transparent 66%),
+    rgba(0,0,0,.58);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--red) 16%, transparent), inset 0 0 20px color-mix(in srgb, var(--red) 8%, transparent);
+}
+
+.music-icon-button:hover,
+.music-icon-button.active,
+.music-play-button:hover,
+.music-play-button.playing {
+  color: #fff;
+  border-color: var(--line-strong);
+  background-color: color-mix(in srgb, var(--red) 12%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.music-secondary-controls {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.music-secondary-controls .hud-button.active {
+  color: #fff;
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+
+.music-volume-control {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: .56rem;
+  letter-spacing: .12em;
+}
+
+.music-library-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.music-library-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 10px;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--red) 42%, transparent) transparent;
+}
+
+.music-library-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 9px;
+  align-items: center;
+  min-height: 50px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--red) 10%, transparent);
+  background: rgba(255,255,255,.018);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.music-library-item:hover,
+.music-library-item.active {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+}
+
+.music-library-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--red-soft);
+  background: rgba(0,0,0,.35);
+}
+
+.music-library-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.music-library-copy strong,
+.music-library-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-library-copy strong {
+  font-size: .73rem;
+  font-weight: 650;
+}
+
+.music-library-copy small {
+  color: var(--muted);
+  font-size: .61rem;
+}
+
+.music-empty-state {
+  padding: 16px 10px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  text-align: center;
+  font-size: .68rem;
+}
+
+@media (max-width: 620px) {
+  .music-main-controls {
+    grid-template-columns: 1fr 1fr 54px 1fr 1fr;
+  }
+
+  .music-play-button {
+    width: 54px;
+    height: 54px;
+  }
 }

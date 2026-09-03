@@ -56,7 +56,46 @@ export class VoiceService {
 
   get recognitionSupported() {
     return Boolean(this.Recognition);
-  }\n\n  async localRecognitionAvailability() {\n    if (!this.Recognition?.available) return "unsupported";\n    try {\n      return await this.Recognition.available({\n        langs: [this.getRecognitionLocale()],\n        processLocally: true,\n        quality: "dictation"\n      });\n    } catch {\n      return "unsupported";\n    }\n  }\n\n  async prepareLocalRecognition() {\n    if (!this.Recognition?.available || !this.Recognition?.install) return { supported: false, status: "unsupported" };\n    const locale = this.getRecognitionLocale();\n    let status = await this.localRecognitionAvailability();\n    if (status === "downloadable" || status === "downloading") {\n      const installed = await this.Recognition.install({\n        langs: [locale],\n        processLocally: true,\n        quality: "dictation"\n      });\n      if (!installed) return { supported: true, status: "failed" };\n      status = await this.localRecognitionAvailability();\n    }\n    if (status === "available") {\n      this.preferLocalRecognition = true;\n      this.rebuildRecognition();\n      return { supported: true, status: "available" };\n    }\n    return { supported: true, status };\n  }\n\n  setPreferLocalRecognition(value) {\n    this.preferLocalRecognition = Boolean(value);\n    this.rebuildRecognition();\n  }
+  }
+
+  async localRecognitionAvailability() {
+    if (!this.Recognition?.available) return "unsupported";
+    try {
+      return await this.Recognition.available({
+        langs: [this.getRecognitionLocale()],
+        processLocally: true,
+        quality: "dictation"
+      });
+    } catch {
+      return "unsupported";
+    }
+  }
+
+  async prepareLocalRecognition() {
+    if (!this.Recognition?.available || !this.Recognition?.install) return { supported: false, status: "unsupported" };
+    const locale = this.getRecognitionLocale();
+    let status = await this.localRecognitionAvailability();
+    if (status === "downloadable" || status === "downloading") {
+      const installed = await this.Recognition.install({
+        langs: [locale],
+        processLocally: true,
+        quality: "dictation"
+      });
+      if (!installed) return { supported: true, status: "failed" };
+      status = await this.localRecognitionAvailability();
+    }
+    if (status === "available") {
+      this.preferLocalRecognition = true;
+      this.rebuildRecognition();
+      return { supported: true, status: "available" };
+    }
+    return { supported: true, status };
+  }
+
+  setPreferLocalRecognition(value) {
+    this.preferLocalRecognition = Boolean(value);
+    this.rebuildRecognition();
+  }
 
   setLanguageMode(mode = "pt") {
     const allowed = ["pt", "en", "es", "ja"];

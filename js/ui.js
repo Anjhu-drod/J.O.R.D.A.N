@@ -65,11 +65,9 @@ export class JordanUI {
       internetToggleButton: document.querySelector("#internetToggleButton"),
       locationStatus: document.querySelector("#locationStatus"),
       lexiconStatus: document.querySelector("#lexiconStatus"),
-      mediaProviderSelect: document.querySelector("#mediaProviderSelect"),
-      spotifyStatus: document.querySelector("#spotifyStatus"),
-      spotifyClientIdInput: document.querySelector("#spotifyClientIdInput"),
-      spotifySaveButton: document.querySelector("#spotifySaveButton"),
-      spotifyConnectButton: document.querySelector("#spotifyConnectButton"),
+      musicLibraryStatus: document.querySelector("#musicLibraryStatus"),
+      musicImportInput: document.querySelector("#musicImportInput"),
+      musicClearButton: document.querySelector("#musicClearButton"),
       themeSelect: document.querySelector("#themeSelect"),
       systemCommandList: document.querySelector("#systemCommandList"),
       toastContainer: document.querySelector("#toastContainer"),
@@ -80,8 +78,19 @@ export class JordanUI {
       mediaArtwork: document.querySelector("#mediaArtwork"),
       mediaTrackTitle: document.querySelector("#mediaTrackTitle"),
       mediaTrackArtist: document.querySelector("#mediaTrackArtist"),
-      spotifyEmbedContainer: document.querySelector("#spotifyEmbedContainer"),
-      mediaExternalLink: document.querySelector("#mediaExternalLink"),
+      musicProgress: document.querySelector("#musicProgress"),
+      musicCurrentTime: document.querySelector("#musicCurrentTime"),
+      musicDuration: document.querySelector("#musicDuration"),
+      musicShuffleButton: document.querySelector("#musicShuffleButton"),
+      musicPreviousButton: document.querySelector("#musicPreviousButton"),
+      musicPlayPauseButton: document.querySelector("#musicPlayPauseButton"),
+      musicNextButton: document.querySelector("#musicNextButton"),
+      musicRepeatButton: document.querySelector("#musicRepeatButton"),
+      musicFavoriteButton: document.querySelector("#musicFavoriteButton"),
+      musicVolume: document.querySelector("#musicVolume"),
+      musicImportInputCompanion: document.querySelector("#musicImportInputCompanion"),
+      musicSearchInput: document.querySelector("#musicSearchInput"),
+      musicLibraryList: document.querySelector("#musicLibraryList"),
       researchTitle: document.querySelector("#researchTitle"),
       researchSummary: document.querySelector("#researchSummary"),
       researchSources: document.querySelector("#researchSources"),
@@ -289,15 +298,10 @@ export class JordanUI {
     if (this.elements.themeSelect) this.elements.themeSelect.value = selected;
   }
 
-  setSpotifyStatus({ configured = false, connected = false } = {}) {
-    if (!this.elements.spotifyStatus) return;
-    if (!configured) {
-      this.elements.spotifyStatus.textContent = "Spotify não configurado";
-      if (this.elements.spotifyConnectButton) this.elements.spotifyConnectButton.textContent = "CONECTAR SPOTIFY";
-      return;
-    }
-    this.elements.spotifyStatus.textContent = connected ? "Spotify conectado" : "Client ID salvo · login pendente";
-    if (this.elements.spotifyConnectButton) this.elements.spotifyConnectButton.textContent = connected ? "RECONECTAR SPOTIFY" : "CONECTAR SPOTIFY";
+  setMusicLibraryStatus(count = 0) {
+    if (!this.elements.musicLibraryStatus) return;
+    const total = Number(count || 0);
+    this.elements.musicLibraryStatus.textContent = `Biblioteca local · ${total} ${total === 1 ? "faixa" : "faixas"}`;
   }
 
   openCompanion(panel = "media") {
@@ -318,32 +322,89 @@ export class JordanUI {
   }
 
   renderMediaTrack(track) {
-    if (!track) return;
     this.openCompanion("media");
-    if (this.elements.mediaTrackTitle) this.elements.mediaTrackTitle.textContent = track.name || "Faixa";
-    if (this.elements.mediaTrackArtist) this.elements.mediaTrackArtist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
+
+    if (!track) {
+      if (this.elements.mediaTrackTitle) this.elements.mediaTrackTitle.textContent = "Nenhuma faixa";
+      if (this.elements.mediaTrackArtist) this.elements.mediaTrackArtist.textContent = "Adicione músicas à biblioteca local.";
+      if (this.elements.mediaArtwork) this.elements.mediaArtwork.innerHTML = "<span>♫</span>";
+      if (this.elements.musicFavoriteButton) this.elements.musicFavoriteButton.textContent = "☆ FAVORITA";
+      return;
+    }
+
+    if (this.elements.mediaTrackTitle) this.elements.mediaTrackTitle.textContent = track.title || "Faixa";
+    if (this.elements.mediaTrackArtist) this.elements.mediaTrackArtist.textContent = [track.artist, track.album].filter(Boolean).join(" · ") || "Biblioteca local";
     if (this.elements.mediaArtwork) {
-      this.elements.mediaArtwork.innerHTML = track.image
-        ? `<img src="${track.image}" alt="Capa de ${track.name || "faixa"}" referrerpolicy="no-referrer" />`
-        : "<span>♫</span>";
+      this.elements.mediaArtwork.innerHTML = `<span>${track.favorite ? "♥" : "♫"}</span>`;
     }
-    if (this.elements.spotifyEmbedContainer) {
-      this.elements.spotifyEmbedContainer.innerHTML = "";
-      if (track.embedUrl) {
-        const frame = document.createElement("iframe");
-        frame.src = track.embedUrl;
-        frame.width = "100%";
-        frame.height = "152";
-        frame.frameBorder = "0";
-        frame.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
-        frame.loading = "lazy";
-        frame.title = `Spotify · ${track.name || "faixa"}`;
-        this.elements.spotifyEmbedContainer.appendChild(frame);
-      }
+    if (this.elements.musicFavoriteButton) {
+      this.elements.musicFavoriteButton.textContent = track.favorite ? "★ FAVORITA" : "☆ FAVORITA";
+      this.elements.musicFavoriteButton.classList.toggle("active", Boolean(track.favorite));
     }
-    if (this.elements.mediaExternalLink) {
-      this.elements.mediaExternalLink.href = track.url || "#";
-      this.elements.mediaExternalLink.classList.toggle("hidden", !track.url);
+  }
+
+  updateMusicPlaybackState(state = {}) {
+    if (this.elements.musicPlayPauseButton) {
+      this.elements.musicPlayPauseButton.textContent = state.playing ? "❚❚" : "▶";
+      this.elements.musicPlayPauseButton.classList.toggle("playing", Boolean(state.playing));
+    }
+    if (this.elements.musicShuffleButton) {
+      this.elements.musicShuffleButton.classList.toggle("active", Boolean(state.shuffle));
+      this.elements.musicShuffleButton.title = state.shuffle ? "Shuffle ligado" : "Shuffle desligado";
+    }
+    if (this.elements.musicRepeatButton) {
+      const labels = { off: "↻", all: "↻ ALL", one: "↻ 1" };
+      this.elements.musicRepeatButton.textContent = labels[state.repeatMode] || "↻";
+      this.elements.musicRepeatButton.classList.toggle("active", state.repeatMode !== "off");
+    }
+    if (this.elements.musicVolume && Number.isFinite(state.volume)) {
+      this.elements.musicVolume.value = String(state.volume);
+    }
+  }
+
+  updateMusicTime(time = {}) {
+    if (this.elements.musicProgress) this.elements.musicProgress.value = String(Number(time.percent || 0));
+    if (this.elements.musicCurrentTime) this.elements.musicCurrentTime.textContent = time.currentLabel || "0:00";
+    if (this.elements.musicDuration) this.elements.musicDuration.textContent = time.durationLabel || "0:00";
+  }
+
+  renderMusicLibrary(tracks = [], currentTrackId = null) {
+    this.setMusicLibraryStatus(tracks.length);
+    if (!this.elements.musicLibraryList) return;
+
+    const query = normalizeText(this.elements.musicSearchInput?.value || "");
+    const filtered = tracks.filter((track) => {
+      if (!query) return true;
+      return normalizeText(`${track.title} ${track.artist}`).includes(query);
+    });
+
+    if (!filtered.length) {
+      this.elements.musicLibraryList.innerHTML = `<div class="music-empty-state">${tracks.length ? "Nenhuma faixa combina com a busca." : "Nenhuma música importada."}</div>`;
+      return;
+    }
+
+    this.elements.musicLibraryList.innerHTML = "";
+    for (const track of filtered) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "music-library-item";
+      item.dataset.trackId = track.id;
+      item.classList.toggle("active", track.id === currentTrackId);
+
+      const icon = document.createElement("span");
+      icon.className = "music-library-icon";
+      icon.textContent = track.id === currentTrackId ? "▶" : (track.favorite ? "★" : "♫");
+
+      const body = document.createElement("span");
+      body.className = "music-library-copy";
+      const title = document.createElement("strong");
+      title.textContent = track.title || "Faixa";
+      const artist = document.createElement("small");
+      artist.textContent = track.artist || "Biblioteca local";
+      body.append(title, artist);
+
+      item.append(icon, body);
+      this.elements.musicLibraryList.appendChild(item);
     }
   }
 

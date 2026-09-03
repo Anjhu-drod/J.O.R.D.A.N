@@ -639,12 +639,12 @@ export class JordanAssistant {
 
   async tryMediaRequest(original, text) {
     if (!this.media) return null;
-    const wantsPlay = /\b(toque|toca|tocar|reproduza|reproduzir|coloque|ponha|bote)\b/.test(text);
-    const mentionsMedia = /\b(musica|playlist|faixa|spotify|youtube)\b/.test(text);
+    const wantsPlay = /(toque|toca|tocar|reproduza|reproduzir|coloque|ponha|bote)/.test(text);
+    const mentionsMedia = /(musica|playlist|faixa|som|audio)/.test(text);
     if (!wantsPlay || !mentionsMedia) return null;
 
     const query = this.media.extractMusicQuery(original);
-    return this.prepareMediaPlayback(query, { random: /\bqualquer\b/.test(text) });
+    return this.prepareMediaPlayback(query, { random: /(qualquer|aleatoria|aleatorio)/.test(text) });
   }
 
   async prepareMediaPlayback(query = "", { random = false } = {}) {
@@ -652,41 +652,32 @@ export class JordanAssistant {
 
     try {
       const result = await this.media.findPlayableTrack(query, { random });
-      if (result.status === "external") {
-        const providerLabel = result.provider === "youtube" ? "YouTube" : "YouTube Music";
-        return this.response(`Preparei a busca por “${result.query}” no ${providerLabel}.`, {
-          action: "open-link", url: result.url, linkLabel: `ABRIR ${providerLabel.toUpperCase()}`, topic: "media"
-        });
-      }
 
-      if (result.status === "needs-config") {
+      if (result.status === "library-empty") {
         return this.response(
-          "Meu player interno está pronto, mas falta configurar o Spotify Client ID em SYS. Depois disso eu consigo pesquisar faixas e abrir o player dentro da própria JORDAN.",
-          { action: "media-auth", mediaStatus: result.status, mediaQuery: result.query, topic: "media" }
-        );
-      }
-
-      if (result.status === "needs-login") {
-        return this.response(
-          "Só falta conectar sua conta do Spotify. Abri o painel de mídia pra você autorizar.",
-          { action: "media-auth", mediaStatus: result.status, mediaQuery: result.query, topic: "media" }
+          "Minha biblioteca de música ainda está vazia. Abri o JORDAN Music pra você adicionar arquivos de áudio do seu aparelho.",
+          { action: "open-music-library", topic: "media" }
         );
       }
 
       if (result.status === "not-found") {
-        return this.response(`Não achei uma faixa para “${result.query}” no Spotify.`, { topic: "media" });
+        return this.response(
+          `Não achei “${result.query}” na minha biblioteca. Se você tiver o arquivo, pode adicionar no JORDAN Music.`,
+          { action: "open-music-library", topic: "media" }
+        );
       }
 
       if (result.status === "ready") {
         return this.response(
-          `Achei ${result.track.name}, de ${result.track.artist}. Coloquei no meu player lateral.`,
+          `Achei ${result.track.title}, de ${result.track.artist}. Vou tocar no JORDAN Music.`,
           { action: "play-media", track: result.track, topic: "media", mood: "excited" }
         );
       }
     } catch (error) {
+      console.warn("JORDAN Music:", error);
       return this.response(
-        "O Spotify não respondeu como eu esperava. Se a conexão expirou, abra SYS e conecte de novo.",
-        { action: "media-auth", mediaStatus: "error", topic: "media" }
+        "Meu player teve um problema ao abrir essa faixa. Tenta outra música ou reimporte o arquivo.",
+        { action: "open-music-library", topic: "media" }
       );
     }
 
@@ -856,7 +847,7 @@ export class JordanAssistant {
     }
 
     if (semantic.intent === "assistant_has") {
-      return this.response("Eu tenho agenda própria, memória local, voz, personalidades, conversa, histórias, conhecimento offline, pesquisa online, rotas por GPS, player integrado com Spotify, abertura de apps, interpretação básica de ordens em português e um laboratório offline de física e circuitos.", { casual: true });
+      return this.response("Eu tenho agenda própria, memória local, voz, personalidades, conversa, histórias, conhecimento offline, pesquisa online, rotas por GPS, JORDAN Music com biblioteca e player próprios, abertura de apps, interpretação básica de ordens em português e um laboratório offline de física e circuitos.", { casual: true });
     }
 
     if (semantic.intent === "conversation") {

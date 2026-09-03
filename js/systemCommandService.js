@@ -107,6 +107,41 @@ const COMMANDS = [
     aliases: ["open player", "open de player"]
   },
   {
+    id: "music_pause",
+    phrase: "Pause the music",
+    hint: "póz dhi miú-zik",
+    description: "Pausa a música atual.",
+    aliases: ["pause music", "pause de music"]
+  },
+  {
+    id: "music_resume",
+    phrase: "Play the music",
+    hint: "plêi dhi miú-zik",
+    description: "Continua a música carregada.",
+    aliases: ["play music", "play de music", "resume the music"]
+  },
+  {
+    id: "music_next",
+    phrase: "Next track",
+    hint: "nékst trék",
+    description: "Vai para a próxima música da biblioteca.",
+    aliases: ["next music", "next song"]
+  },
+  {
+    id: "music_previous",
+    phrase: "Previous track",
+    hint: "prí-vi-âs trék",
+    description: "Volta para a música anterior.",
+    aliases: ["previous music", "previous song"]
+  },
+  {
+    id: "music_shuffle",
+    phrase: "Shuffle the music",
+    hint: "shâ-fol dhi miú-zik",
+    description: "Liga ou desliga a ordem aleatória.",
+    aliases: ["shuffle music", "shuffle de music"]
+  },
+  {
     id: "open_research",
     phrase: "Open the research",
     hint: "ôu-pen dhi ri-sârtch",

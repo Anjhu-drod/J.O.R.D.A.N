@@ -48,8 +48,6 @@ let voiceEnabled = true;
 let assistantVolume = 1;
 let languageMode = "pt";
 let internetEnabled = true;
-let mediaProvider = "spotify";
-let spotifyClientId = "";
 let theme = "crimson";
 let idleTimer = null;
 let lastInteractionAt = Date.now();
@@ -62,8 +60,27 @@ const voice = new VoiceService({
   onInterimTranscript: (transcript) => ui.setInterimTranscript(transcript),
   onStatusChange: (status) => ui.setStatus(status),
   onListeningChange: (active) => ui.setListening(active),
-  onSpeakingChange: (active) => ui.setSpeaking(active),
+  onSpeakingChange: (active) => {
+    ui.setSpeaking(active);
+    media.setDucked(active);
+  },
   onLanguageDetected: (language) => ui.setLanguageStatus(languageMode, language)
+});
+
+let musicLibrarySnapshot = [];
+
+media.setCallbacks({
+  onTrackChange: (track) => {
+    ui.renderMediaTrack(track);
+    ui.renderMusicLibrary(musicLibrarySnapshot, track?.id || null);
+  },
+  onStateChange: (state) => ui.updateMusicPlaybackState(state),
+  onTimeUpdate: (time) => ui.updateMusicTime(time),
+  onLibraryChange: (tracks) => {
+    musicLibrarySnapshot = tracks;
+    ui.setMusicLibraryStatus(tracks.length);
+    ui.renderMusicLibrary(tracks, media.getState()?.currentTrack?.id || null);
+  }
 });
 
 const reminders = new ReminderService(calendar, {
@@ -105,42 +122,30 @@ async function initialize() {
     await setSetting("languageMode", "pt");
   }
   internetEnabled = await getSetting("internetEnabled", true);
-  mediaProvider = await getSetting("mediaProvider", "spotify");
-  const mediaDefaultApplied = await getSetting("v06MediaDefaultApplied", false);
-  if (!mediaDefaultApplied) {
-    mediaProvider = "spotify";
-    await setSetting("mediaProvider", "spotify");
-    await setSetting("v06MediaDefaultApplied", true);
-  }
-  spotifyClientId = await getSetting("spotifyClientId", "");
   theme = await getSetting("theme", "crimson");
 
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
   internet.setEnabled(internetEnabled);
-  media.setDefaultProvider(mediaProvider);
-  media.configureSpotify({ clientId: spotifyClientId, redirectUri: `${location.origin}${location.pathname}` });
   ui.setTheme(theme);
 
   if (ui.elements.languageModeSelect) ui.elements.languageModeSelect.value = languageMode;
-  if (ui.elements.mediaProviderSelect) ui.elements.mediaProviderSelect.value = mediaProvider;
-  if (ui.elements.spotifyClientIdInput) ui.elements.spotifyClientIdInput.value = spotifyClientId;
   if (ui.elements.themeSelect) ui.elements.themeSelect.value = theme;
-  ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });
   ui.setLanguageStatus(languageMode, voice.currentLanguage);
   ui.setInternetStatus({ enabled: internetEnabled, online: navigator.onLine });
   ui.setLexiconStatus(getLexiconStats());
   renderSystemCommandLearning();
 
   try {
-    const spotifyReturned = await media.handleSpotifyCallback();
-    if (spotifyReturned) {
-      ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });
-      ui.toast("Spotify conectado à JORDAN.");
-    }
+    await media.initialize();
+    musicLibrarySnapshot = await media.getLibrary();
+    ui.setMusicLibraryStatus(musicLibrarySnapshot.length);
+    ui.renderMusicLibrary(musicLibrarySnapshot, null);
+    ui.updateMusicPlaybackState(media.getState());
   } catch (error) {
-    console.warn("Spotify callback:", error);
-    ui.toast("Não consegui concluir o login do Spotify.");
+    console.warn("JORDAN Music:", error);
+    ui.setMusicLibraryStatus(0);
+    ui.toast("Não consegui abrir a biblioteca local de música neste navegador.");
   }
 
   if (internetEnabled && navigator.onLine) {
@@ -150,7 +155,20 @@ async function initialize() {
   }
 
   ui.elements.speechRecognitionStatus.textContent =
-    voice.recognitionSupported ? "Disponível · silêncio: 2 s" : "Indisponível neste navegador";\n\n  if (ui.elements.offlineSpeechStatus) {\n    voice.localRecognitionAvailability().then((status) => {\n      const labels = {\n        available: "PT-BR local disponível",\n        downloadable: "Pacote PT-BR disponível para download",\n        downloading: "Pacote PT-BR baixando",\n        unavailable: "Reconhecimento local indisponível",\n        unsupported: "Navegador sem suporte"\n      };\n      ui.elements.offlineSpeechStatus.textContent = labels[status] || status;\n    });\n  }
+    voice.recognitionSupported ? "Disponível · silêncio: 2 s" : "Indisponível neste navegador";
+
+  if (ui.elements.offlineSpeechStatus) {
+    voice.localRecognitionAvailability().then((status) => {
+      const labels = {
+        available: "PT-BR local disponível",
+        downloadable: "Pacote PT-BR disponível para download",
+        downloading: "Pacote PT-BR baixando",
+        unavailable: "Reconhecimento local indisponível",
+        unsupported: "Navegador sem suporte"
+      };
+      ui.elements.offlineSpeechStatus.textContent = labels[status] || status;
+    });
+  }
 
   updateVoiceStatus();
   ui.setPersonality(assistant.getPersonality());
@@ -296,15 +314,110 @@ function bindEvents() {
     }
   });
 
-  ui.elements.mediaProviderSelect?.addEventListener("change", async (event) => {
+  const importMusicFiles = async (fileInput) => {
     registerInteraction();
-    mediaProvider = event.target.value;
-    media.setDefaultProvider(mediaProvider);
-    await setSetting("mediaProvider", mediaProvider);
-    ui.toast(`Provedor de mídia: ${event.target.selectedOptions[0]?.textContent || mediaProvider}.`);
-  });\n\n  ui.elements.themeSelect?.addEventListener("change", async (event) => {\n    registerInteraction();\n    theme = event.target.value;\n    ui.setTheme(theme);\n    await setSetting("theme", theme);\n    ui.toast(`Tema visual: ${event.target.selectedOptions[0]?.textContent || theme}.`);\n  });\n\n  ui.elements.spotifySaveButton?.addEventListener("click", async () => {\n    registerInteraction();\n    spotifyClientId = ui.elements.spotifyClientIdInput?.value?.trim() || "";\n    await setSetting("spotifyClientId", spotifyClientId);\n    media.configureSpotify({ clientId: spotifyClientId, redirectUri: `${location.origin}${location.pathname}` });\n    ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });\n    ui.toast(spotifyClientId ? "Spotify Client ID salvo." : "Spotify Client ID removido.");\n  });\n\n  ui.elements.spotifyConnectButton?.addEventListener("click", async () => {\n    registerInteraction();\n    spotifyClientId = ui.elements.spotifyClientIdInput?.value?.trim() || spotifyClientId;\n    if (!spotifyClientId) {\n      ui.toast("Cole seu Spotify Client ID primeiro.");\n      return;\n    }\n    await setSetting("spotifyClientId", spotifyClientId);\n    media.configureSpotify({ clientId: spotifyClientId, redirectUri: `${location.origin}${location.pathname}` });\n    try {\n      await media.connectSpotify();\n    } catch (error) {\n      ui.toast("Não consegui iniciar a conexão com Spotify.");\n    }\n  });\n\n  document.querySelectorAll("[data-companion-target]").forEach((button) => {\n    button.addEventListener("click", () => ui.openCompanion(button.dataset.companionTarget));\n  });\n  ui.elements.closeCompanionButton?.addEventListener("click", () => ui.closeCompanion());
+    const files = fileInput?.files;
+    if (!files?.length) return;
+    try {
+      const result = await media.importFiles(files);
+      musicLibrarySnapshot = await media.getLibrary();
+      ui.setMusicLibraryStatus(musicLibrarySnapshot.length);
+      ui.renderMusicLibrary(musicLibrarySnapshot, media.getState()?.currentTrack?.id || null);
+      const importedText = result.imported === 1 ? "1 música adicionada" : `${result.imported} músicas adicionadas`;
+      const skippedText = result.skipped ? ` · ${result.skipped} já existiam` : "";
+      ui.toast(`${importedText}${skippedText}.`, "JORDAN MUSIC");
+      ui.openCompanion("media");
+    } catch (error) {
+      console.warn("Import music:", error);
+      ui.toast("Não consegui salvar esses arquivos de áudio.", "JORDAN MUSIC");
+    } finally {
+      fileInput.value = "";
+    }
+  };
 
-  ui.elements.offlineSpeechButton?.addEventListener("click", async () => {\n    registerInteraction();\n    ui.elements.offlineSpeechStatus.textContent = "Preparando pacote local...";\n    const result = await voice.prepareLocalRecognition();\n    const labels = {\n      available: "PT-BR local ativado",\n      downloadable: "Pacote ainda precisa ser baixado",\n      downloading: "Pacote em download",\n      unavailable: "PT-BR local indisponível",\n      failed: "Falha ao instalar pacote local",\n      unsupported: "Navegador sem suporte"\n    };\n    ui.elements.offlineSpeechStatus.textContent = labels[result.status] || result.status;\n    ui.toast(result.status === "available" ? "Reconhecimento PT-BR local ativado." : "Este navegador continuará usando o reconhecimento normal.");\n  });\n\n  ui.elements.testVoiceButton.addEventListener("click", async () => {
+  ui.elements.musicImportInput?.addEventListener("change", (event) => importMusicFiles(event.target));
+  ui.elements.musicImportInputCompanion?.addEventListener("change", (event) => importMusicFiles(event.target));
+
+  ui.elements.musicClearButton?.addEventListener("click", async () => {
+    registerInteraction();
+    if (!window.confirm("Apagar todas as músicas salvas na biblioteca local da JORDAN neste dispositivo?")) return;
+    await media.clearLibrary();
+    musicLibrarySnapshot = [];
+    ui.renderMediaTrack(null);
+    ui.renderMusicLibrary([], null);
+    ui.toast("Biblioteca local limpa.", "JORDAN MUSIC");
+  });
+
+  ui.elements.musicPlayPauseButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const result = await media.togglePlayPause();
+    if (result?.blocked) ui.toast("O navegador pediu uma interação manual. Toque em Play novamente.", "JORDAN MUSIC");
+  });
+  ui.elements.musicPreviousButton?.addEventListener("click", () => { registerInteraction(); media.previous(); });
+  ui.elements.musicNextButton?.addEventListener("click", () => { registerInteraction(); media.next(); });
+  ui.elements.musicShuffleButton?.addEventListener("click", () => {
+    registerInteraction();
+    const enabled = media.toggleShuffle();
+    ui.toast(enabled ? "Shuffle ativado." : "Shuffle desativado.", "JORDAN MUSIC");
+  });
+  ui.elements.musicRepeatButton?.addEventListener("click", () => {
+    registerInteraction();
+    const mode = media.cycleRepeat();
+    const labels = { off: "Repeat desligado.", all: "Repetir biblioteca.", one: "Repetir faixa atual." };
+    ui.toast(labels[mode], "JORDAN MUSIC");
+  });
+  ui.elements.musicFavoriteButton?.addEventListener("click", async () => {
+    registerInteraction();
+    if (!media.getState()?.currentTrack) {
+      ui.toast("Nenhuma música está carregada.", "JORDAN MUSIC");
+      return;
+    }
+    const favorite = await media.toggleFavorite();
+    ui.toast(favorite ? "Adicionei às favoritas." : "Removi das favoritas.", "JORDAN MUSIC");
+  });
+  ui.elements.musicVolume?.addEventListener("input", (event) => media.setVolume(event.target.value));
+  ui.elements.musicProgress?.addEventListener("input", (event) => media.seekPercent(event.target.value));
+  ui.elements.musicSearchInput?.addEventListener("input", () => {
+    ui.renderMusicLibrary(musicLibrarySnapshot, media.getState()?.currentTrack?.id || null);
+  });
+  ui.elements.musicLibraryList?.addEventListener("click", async (event) => {
+    const item = event.target.closest("[data-track-id]");
+    if (!item) return;
+    registerInteraction();
+    const result = await media.playTrack(item.dataset.trackId);
+    if (result?.blocked) ui.toast("Toque no Play do player para liberar o áudio.", "JORDAN MUSIC");
+  });
+
+  ui.elements.themeSelect?.addEventListener("change", async (event) => {
+    registerInteraction();
+    theme = event.target.value;
+    ui.setTheme(theme);
+    await setSetting("theme", theme);
+    ui.toast(`Tema visual: ${event.target.selectedOptions[0]?.textContent || theme}.`);
+  });
+
+  document.querySelectorAll("[data-companion-target]").forEach((button) => {
+    button.addEventListener("click", () => ui.openCompanion(button.dataset.companionTarget));
+  });
+  ui.elements.closeCompanionButton?.addEventListener("click", () => ui.closeCompanion());
+
+  ui.elements.offlineSpeechButton?.addEventListener("click", async () => {
+    registerInteraction();
+    ui.elements.offlineSpeechStatus.textContent = "Preparando pacote local...";
+    const result = await voice.prepareLocalRecognition();
+    const labels = {
+      available: "PT-BR local ativado",
+      downloadable: "Pacote ainda precisa ser baixado",
+      downloading: "Pacote em download",
+      unavailable: "PT-BR local indisponível",
+      failed: "Falha ao instalar pacote local",
+      unsupported: "Navegador sem suporte"
+    };
+    ui.elements.offlineSpeechStatus.textContent = labels[result.status] || result.status;
+    ui.toast(result.status === "available" ? "Reconhecimento PT-BR local ativado." : "Este navegador continuará usando o reconhecimento normal.");
+  });
+
+  ui.elements.testVoiceButton.addEventListener("click", async () => {
     registerInteraction();
     if (voice.isSpeaking) voice.cancelSpeech();
     const profile = assistant.getPersonality();
@@ -503,11 +616,13 @@ async function handleCommand(text, { fromVoice = false } = {}) {
     }
     if (result.action === "play-media" && result.track) {
       ui.renderMediaTrack(result.track);
+      const playback = await media.playTrack(result.track.id);
+      if (playback?.blocked) {
+        ui.toast("A faixa está pronta. Toque no botão Play para liberar o áudio neste navegador.", "JORDAN MUSIC");
+      }
     }
-    if (result.action === "media-auth") {
+    if (result.action === "open-music-library") {
       ui.openCompanion("media");
-      ui.openView("system");
-      ui.setSpotifyStatus({ configured: media.spotifyConfigured, connected: media.spotifyConnected });
     }
     if (result.action === "research-results" && result.research) {
       ui.renderResearch(result.research);
@@ -623,7 +738,66 @@ async function executeSystemCommand(command) {
   if (id === "open_tutorial") {
     ui.openTutorialPanel();
     return;
-  }\n\n  if (id === "open_player") {\n    ui.openCompanion("media");\n    return;\n  }\n\n  if (id === "open_research") {\n    ui.openCompanion("research");\n    return;\n  }\n\n  if (id === "open_navigation") {\n    ui.openCompanion("route");\n    return;\n  }\n\n  if (id === "open_lab") {\n    ui.openCompanion("science");\n    return;\n  }\n\n  if (id === "close_panel") {\n    ui.closeCompanion();\n    return;\n  }
+  }
+
+  if (id === "open_player") {
+    ui.openCompanion("media");
+    return;
+  }
+
+  if (id === "music_pause") {
+    ui.openCompanion("media");
+    media.pause();
+    return;
+  }
+
+  if (id === "music_resume") {
+    ui.openCompanion("media");
+    const result = await media.resume();
+    if (!result?.ok && result?.reason === "nothing-loaded") {
+      ui.toast("Nenhuma música está carregada.", "JORDAN MUSIC");
+    }
+    return;
+  }
+
+  if (id === "music_next") {
+    ui.openCompanion("media");
+    await media.next();
+    return;
+  }
+
+  if (id === "music_previous") {
+    ui.openCompanion("media");
+    await media.previous();
+    return;
+  }
+
+  if (id === "music_shuffle") {
+    ui.openCompanion("media");
+    const enabled = media.toggleShuffle();
+    ui.toast(enabled ? "Shuffle ativado." : "Shuffle desativado.", "JORDAN MUSIC");
+    return;
+  }
+
+  if (id === "open_research") {
+    ui.openCompanion("research");
+    return;
+  }
+
+  if (id === "open_navigation") {
+    ui.openCompanion("route");
+    return;
+  }
+
+  if (id === "open_lab") {
+    ui.openCompanion("science");
+    return;
+  }
+
+  if (id === "close_panel") {
+    ui.closeCompanion();
+    return;
+  }
 
   if (id === "internet_on" || id === "internet_off") {
     internetEnabled = id === "internet_on";
