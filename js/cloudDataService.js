@@ -20,7 +20,8 @@ import { auth, firestore } from "./firebaseService.js";
 let settingsCache = null;
 let settingsCacheUid = null;
 
-const WRITE_ACK_TIMEOUT_MS = 3500;
+const WRITE_ACK_TIMEOUT_MS = 1200;
+const READ_NETWORK_TIMEOUT_MS = 2200;
 const SYNC_TIMEOUT_MS = 6500;
 
 function requireUid() {
@@ -67,34 +68,83 @@ export function isCloudOfflineError(error) {
 }
 
 async function readDocument(ref) {
-  try {
-    return await getDoc(ref);
-  } catch (error) {
-    if (!isCloudOfflineError(error)) throw error;
+  let cached = null;
 
-    try {
-      return await getDocFromCache(ref);
-    } catch {
-      // Primeiro uso offline: ainda não existe cópia desse documento no cache.
-      // Isso não é fatal; a JORDAN usa o fallback local/default e sincroniza
-      // quando a rede voltar.
-      return null;
-    }
+  // Primeiro usamos o cache. Isso evita que a inicialização inteira dependa
+  // de uma resposta imediata dos servidores do Firestore.
+  try {
+    cached = await getDocFromCache(ref);
+  } catch {
+    cached = null;
   }
+
+  if (!navigator.onLine) return cached;
+
+  const networkRead = Promise.resolve(getDoc(ref)).then(
+    (snapshot) => ({ snapshot, error: null }),
+    (error) => ({ snapshot: null, error })
+  );
+
+  const result = await Promise.race([
+    networkRead,
+    delay(READ_NETWORK_TIMEOUT_MS, { timedOut: true })
+  ]);
+
+  if (result?.timedOut) {
+    // A consulta de rede continua viva em segundo plano e atualizará o cache
+    // quando o SDK recuperar a conexão. A UI não fica presa esperando.
+    networkRead.then((late) => {
+      if (late?.error && !isCloudOfflineError(late.error)) {
+        console.warn("JORDAN Cloud: leitura tardia de documento falhou.", late.error);
+      }
+    });
+    return cached;
+  }
+
+  if (result.error) {
+    if (isCloudOfflineError(result.error)) return cached;
+    throw result.error;
+  }
+
+  return result.snapshot;
 }
 
 async function readQuery(source) {
-  try {
-    return await getDocs(source);
-  } catch (error) {
-    if (!isCloudOfflineError(error)) throw error;
+  let cached = null;
 
-    try {
-      return await getDocsFromCache(source);
-    } catch {
-      return null;
-    }
+  try {
+    cached = await getDocsFromCache(source);
+  } catch {
+    cached = null;
   }
+
+  if (!navigator.onLine) return cached;
+
+  const networkRead = Promise.resolve(getDocs(source)).then(
+    (snapshot) => ({ snapshot, error: null }),
+    (error) => ({ snapshot: null, error })
+  );
+
+  const result = await Promise.race([
+    networkRead,
+    delay(READ_NETWORK_TIMEOUT_MS, { timedOut: true })
+  ]);
+
+  if (result?.timedOut) {
+    networkRead.then((late) => {
+      if (late?.error && !isCloudOfflineError(late.error)) {
+        console.warn("JORDAN Cloud: leitura tardia de coleção falhou.", late.error);
+      }
+    });
+    return cached;
+  }
+
+  if (result.error) {
+    if (isCloudOfflineError(result.error)) return cached;
+    throw result.error;
+  }
+
+  return result.snapshot;
 }
 
 function logBackgroundWriteError(label, error) {

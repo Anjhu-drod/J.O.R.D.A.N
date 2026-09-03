@@ -111,6 +111,43 @@ const reminders = new ReminderService(calendar, {
 
 let legacyMigrationRunning = false;
 
+function isStartupCloudError(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return !navigator.onLine
+    || error?.name === "FirebaseError"
+    || code.includes("unavailable")
+    || code.includes("network-request-failed")
+    || code.includes("permission-denied")
+    || code.includes("failed-precondition")
+    || code.includes("not-found")
+    || code.includes("deadline-exceeded")
+    || message.includes("client is offline")
+    || message.includes("failed to fetch")
+    || message.includes("network error");
+}
+
+async function startupCloudValue(label, task, fallback) {
+  try {
+    return await task();
+  } catch (error) {
+    console.warn(`JORDAN startup / ${label}:`, error);
+    cloudState = {
+      ...cloudState,
+      online: navigator.onLine,
+      fromCache: true,
+      pending: true,
+      error
+    };
+    ui.setCloudStatus(cloudState);
+
+    if (!isStartupCloudError(error)) {
+      ui.addMessage("JORDAN", `O Cloud Core respondeu com um erro em ${label}. Vou iniciar com o modo de contingência e continuar tentando sincronizar.`);
+    }
+    return fallback;
+  }
+}
+
 async function attemptLegacyMigration({ notify = false } = {}) {
   if (legacyMigrationRunning || !authService.currentUser) return null;
 
@@ -154,42 +191,60 @@ async function initialize() {
   ui.setAccountUser(authService.currentUser);
   ui.setCloudStatus(cloudState);
 
-  try {
+  await startupCloudValue("abertura da memória", async () => {
     await openDatabase();
     ui.elements.dbStatus.textContent = hasPersistentFirestoreCache()
       ? "CLOUD + OFFLINE CACHE"
       : "CLOUD · CACHE TEMPORÁRIO";
+    return true;
+  }, false);
 
-    await attemptLegacyMigration();
-  } catch (error) {
-    console.error("JORDAN Cloud init:", error);
-    cloudState = { ...cloudState, error };
-    ui.setCloudStatus(cloudState);
-    ui.addMessage("JORDAN", `Não consegui iniciar minha memória compartilhada: ${error.message}`);
-  }
+  // A migração nunca mais pode impedir a tela principal de abrir.
+  attemptLegacyMigration().catch((error) => {
+    console.warn("JORDAN legacy migration background:", error);
+  });
 
   const accountUser = authService.currentUser;
-  if (accountUser?.displayName && !(await memory.get("profile.name"))) {
-    await memory.remember({
-      key: "profile.name",
-      label: "Seu nome",
-      value: accountUser.displayName,
-      type: "fact",
-      source: "jordan-id"
-    });
+  if (accountUser?.displayName) {
+    const currentName = await startupCloudValue(
+      "nome do perfil",
+      () => memory.get("profile.name"),
+      null
+    );
+
+    if (!currentName) {
+      await startupCloudValue(
+        "gravação do nome do perfil",
+        () => memory.remember({
+          key: "profile.name",
+          label: "Seu nome",
+          value: accountUser.displayName,
+          type: "fact",
+          source: "jordan-id"
+        }),
+        null
+      );
+    }
   }
 
-  await assistant.initialize();
+  try {
+    await assistant.initialize();
+  } catch (error) {
+    if (!isStartupCloudError(error)) throw error;
+    console.warn("JORDAN Assistant iniciou sem resposta do Firestore:", error);
+    cloudState = { ...cloudState, fromCache: true, pending: true, error };
+    ui.setCloudStatus(cloudState);
+  }
 
-  voiceEnabled = await getSetting("voiceEnabled", true);
-  assistantVolume = await getSetting("assistantVolume", 1);
-  languageMode = await getSetting("languageMode", "pt");
+  voiceEnabled = await startupCloudValue("voiceEnabled", () => getSetting("voiceEnabled", true), true);
+  assistantVolume = await startupCloudValue("assistantVolume", () => getSetting("assistantVolume", 1), 1);
+  languageMode = await startupCloudValue("languageMode", () => getSetting("languageMode", "pt"), "pt");
   if (languageMode === "auto") {
     languageMode = "pt";
-    await setSetting("languageMode", "pt");
+    startupCloudValue("migração languageMode", () => setSetting("languageMode", "pt"), null);
   }
-  internetEnabled = await getSetting("internetEnabled", true);
-  theme = await getSetting("theme", "crimson");
+  internetEnabled = await startupCloudValue("internetEnabled", () => getSetting("internetEnabled", true), true);
+  theme = await startupCloudValue("theme", () => getSetting("theme", "crimson"), "crimson");
 
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
@@ -247,16 +302,22 @@ async function initialize() {
   ui.elements.pwaStatus.textContent = "serviceWorker" in navigator ? "Compatível" : "Não compatível";
   ui.setNotificationStatus(reminders.notificationPermission);
 
-  // V0.5 migration: o áudio contínuo passa a ser ON por padrão inclusive
-  // para quem veio de uma versão antiga. A migração acontece uma única vez;
-  // depois disso a escolha do usuário é respeitada normalmente.
-  const audioDefaultApplied = await getSetting("v05AudioDefaultApplied", false);
+  const audioDefaultApplied = await startupCloudValue(
+    "v05AudioDefaultApplied",
+    () => getSetting("v05AudioDefaultApplied", false),
+    false
+  );
+
   if (!audioDefaultApplied) {
-    await setSetting("alwaysListening", true);
-    await setSetting("v05AudioDefaultApplied", true);
+    await startupCloudValue("alwaysListening default", () => setSetting("alwaysListening", true), null);
+    await startupCloudValue("v05AudioDefaultApplied save", () => setSetting("v05AudioDefaultApplied", true), null);
   }
 
-  const savedAlwaysListening = await getSetting("alwaysListening", true);
+  const savedAlwaysListening = await startupCloudValue(
+    "alwaysListening",
+    () => getSetting("alwaysListening", true),
+    true
+  );
   ui.elements.alwaysListeningToggle.checked = savedAlwaysListening;
 
   if (savedAlwaysListening && voice.recognitionSupported) {
@@ -270,25 +331,31 @@ async function initialize() {
     ui.setStatus("Áudio contínuo ativado por padrão, mas este navegador não oferece reconhecimento de voz.");
   }
 
-  await ui.refreshAll();
+  await startupCloudValue("atualização da interface", () => ui.refreshAll(), null);
 
   cloudUnsubscribe?.();
-  cloudUnsubscribe = subscribeCloudChanges((status) => {
-    cloudState = { ...cloudState, ...status, error: status.error || null };
-    ui.setCloudStatus(cloudState);
+  try {
+    cloudUnsubscribe = subscribeCloudChanges((status) => {
+      cloudState = { ...cloudState, ...status, error: status.error || null };
+      ui.setCloudStatus(cloudState);
 
-    if (["events", "memories"].includes(status.kind)) {
-      clearTimeout(cloudRefreshTimer);
-      cloudRefreshTimer = setTimeout(async () => {
-        if (!jordanInitialized) return;
-        try {
-          await ui.refreshAll();
-        } catch (error) {
-          console.warn("JORDAN Cloud refresh:", error);
-        }
-      }, 420);
-    }
-  });
+      if (["events", "memories"].includes(status.kind)) {
+        clearTimeout(cloudRefreshTimer);
+        cloudRefreshTimer = setTimeout(async () => {
+          if (!jordanInitialized) return;
+          try {
+            await ui.refreshAll();
+          } catch (error) {
+            console.warn("JORDAN Cloud refresh:", error);
+          }
+        }, 420);
+      }
+    });
+  } catch (error) {
+    console.warn("JORDAN Cloud listener:", error);
+    cloudState = { ...cloudState, fromCache: true, pending: true, error };
+    ui.setCloudStatus(cloudState);
+  }
 
   await registerServiceWorker();
   reminders.start();
@@ -1198,6 +1265,17 @@ async function boot() {
       ui.hideAuthGate();
     } catch (error) {
       console.error("JORDAN boot:", error);
+
+      // Firestore indisponível não deve mais bloquear uma conta já autenticada.
+      // Abrimos o CORE em contingência e o SDK continua tentando sincronizar.
+      if (isStartupCloudError(error)) {
+        cloudState = { ...cloudState, fromCache: true, pending: true, error };
+        ui.setCloudStatus(cloudState);
+        ui.hideAuthGate();
+        ui.toast("Cloud temporariamente indisponível. A JORDAN abriu em modo de contingência e tentará sincronizar sozinha.", "JORDAN CLOUD");
+        return;
+      }
+
       jordanInitialized = false;
       ui.showAuthGate();
       ui.setAuthMessage(`Falha ao iniciar a JORDAN: ${error.message}`, "error");

@@ -1,11 +1,11 @@
-const CACHE_NAME = "jordan-v0.7.1";
+const CACHE_NAME = "jordan-v0.7.2";
 const FIREBASE_CACHE = "jordan-firebase-v12.18.0";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/styles.css",
-  "./js/app.js",
+  "./css/styles.css?v=0.7.2",
+  "./js/app.js?v=0.7.2",
   "./js/authService.js",
   "./js/firebaseConfig.js",
   "./js/firebaseService.js",
@@ -48,61 +48,66 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
       keys
-        .filter((key) => ![CACHE_NAME, FIREBASE_CACHE].includes(key))
+        .filter((key) => key.startsWith("jordan-v") && key !== CACHE_NAME)
         .map((key) => caches.delete(key))
-    ))
-  );
-  self.clients.claim();
+    );
+    await self.clients.claim();
+  })());
 });
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response?.ok) await cache.put(request, response.clone());
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+
+    if (request.mode === "navigate") {
+      return (await cache.match("./index.html")) || Response.error();
+    }
+    throw error;
+  }
+}
+
+async function cacheFirstFirebase(request) {
+  const cache = await caches.open(FIREBASE_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const response = await fetch(request);
+  if (response.ok || response.type === "opaque") {
+    await cache.put(request, response.clone());
+  }
+  return response;
+}
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const requestUrl = new URL(event.request.url);
-  const isSameOrigin = requestUrl.origin === self.location.origin;
-
-  // Os módulos do Firebase são necessários até quando a JORDAN reinicia offline.
-  // Depois da primeira abertura online, guardamos as respostas versionadas do
-  // CDN oficial para que os imports ESM continuem disponíveis sem conexão.
-  const isFirebaseModule =
+  const sameOrigin = requestUrl.origin === self.location.origin;
+  const firebaseModule =
     requestUrl.hostname === "www.gstatic.com" &&
     requestUrl.pathname.startsWith("/firebasejs/12.18.0/");
 
-  if (isFirebaseModule) {
-    event.respondWith(
-      caches.open(FIREBASE_CACHE).then(async (cache) => {
-        const cached = await cache.match(event.request);
-        if (cached) return cached;
-
-        const response = await fetch(event.request);
-        if (response.ok || response.type === "opaque") {
-          cache.put(event.request, response.clone());
-        }
-        return response;
-      })
-    );
+  if (firebaseModule) {
+    event.respondWith(cacheFirstFirebase(event.request));
     return;
   }
 
-  // Demais APIs externas continuam network-only.
-  if (!isSameOrigin) {
+  if (!sameOrigin) {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html"));
-    })
-  );
+  // Código e HTML usam network-first. Assim uma nova versão do GitHub nunca
+  // fica presa atrás de um app.js antigo salvo pelo Service Worker.
+  event.respondWith(networkFirst(event.request));
 });

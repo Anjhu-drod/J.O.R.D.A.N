@@ -63,7 +63,11 @@ async function saveProfile(user, extra = {}) {
   if (!user) return;
 
   const profileRef = doc(firestore, "users", user.uid, "profile", "main");
-  const write = setDoc(profileRef, {
+
+  // O perfil em nuvem é complementar ao Firebase Auth. Ele NUNCA deve
+  // impedir um login válido de abrir a JORDAN. O Firestore mantém a escrita
+  // pendente e confirma quando recuperar a conexão.
+  Promise.resolve(setDoc(profileRef, {
     uid: user.uid,
     email: user.email || null,
     displayName: user.displayName || extra.displayName || "Usuário JORDAN",
@@ -72,32 +76,13 @@ async function saveProfile(user, extra = {}) {
     lastLoginAt: serverTimestamp(),
     createdAt: extra.createdAt || user.metadata?.creationTime || new Date().toISOString(),
     schemaVersion: 1
-  }, { merge: true });
-
-  // O login deve continuar válido mesmo se o Firestore estiver sem rede por
-  // alguns segundos. A escrita já fica na fila/cache do SDK e será confirmada
-  // depois. Erros de permissão reais continuam aparecendo quando online.
-  const tracked = Promise.resolve(write).then(
-    () => ({ ok: true }),
-    (error) => ({ ok: false, error })
-  );
-
-  if (!navigator.onLine) {
-    tracked.then((result) => {
-      if (!result.ok && !isOfflineLikeError(result.error)) {
-        console.warn("JORDAN Auth profile:", result.error);
-      }
-    });
-    return;
-  }
-
-  const result = await Promise.race([
-    tracked,
-    new Promise((resolve) => setTimeout(() => resolve({ ok: false, pending: true }), 3500))
-  ]);
-
-  if (result.pending) return;
-  if (!result.ok && !isOfflineLikeError(result.error)) throw result.error;
+  }, { merge: true })).catch((error) => {
+    if (isOfflineLikeError(error)) {
+      console.info("JORDAN Auth: perfil aguardando sincronização com o Firestore.");
+      return;
+    }
+    console.warn("JORDAN Auth profile:", error);
+  });
 }
 
 export class AuthService {
