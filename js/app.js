@@ -33,6 +33,7 @@ import { listLineageMembers, LINEAGE_PRIVACY_NOTICE } from "./lineageConfig.js";
 import { lineageAdminService } from "./lineageAdminService.js";
 import { SystemTelemetryService } from "./systemTelemetryService.js";
 import { voiceIdentityService } from "./voiceIdentityService.js";
+import { visualEffects } from "./visualEffectsService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -54,6 +55,7 @@ const assistant = new JordanAssistant(calendar, memory, stories, {
 });
 const ui = new JordanUI(calendar, memory);
 const telemetry = new SystemTelemetryService({ onUpdate: (data) => ui.updateTelemetry(data) });
+visualEffects.start();
 
 let deferredInstallPrompt = null;
 let voiceEnabled = true;
@@ -145,9 +147,23 @@ function isStartupCloudError(error) {
     || message.includes("network error");
 }
 
+function withStartupTimeout(task, ms = 4500, label = "Cloud Core") {
+  let timer = null;
+  return Promise.race([
+    Promise.resolve().then(task).finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error(`${label} demorou para responder. A JORDAN seguirá em contingência.`);
+        error.code = "jordan/startup-timeout";
+        reject(error);
+      }, ms);
+    })
+  ]);
+}
+
 async function startupCloudValue(label, task, fallback) {
   try {
-    return await task();
+    return await withStartupTimeout(task, 4500, label);
   } catch (error) {
     console.warn(`JORDAN startup / ${label}:`, error);
     cloudState = {
@@ -262,7 +278,7 @@ async function initialize() {
   }
 
   try {
-    await assistant.initialize();
+    await withStartupTimeout(() => assistant.initialize(), 6500, "Assistant Memory Core");
   } catch (error) {
     if (!isStartupCloudError(error)) throw error;
     console.warn("JORDAN Assistant iniciou sem resposta do Firestore:", error);
@@ -1431,22 +1447,49 @@ function bindAuthEvents() {
 
   ui.elements.identityConfirmButton?.addEventListener("click", async () => {
     if (!selectedLineageIdentityId) return;
+
+    const confirmation = ui.elements.identityConfirmation?.value || "";
+    if (!lineageService.validateConfirmation(selectedLineageIdentityId, confirmation)) {
+      ui.setAuthMessage("O segundo nome não corresponde à identidade selecionada.", "error");
+      ui.elements.identityConfirmation?.focus();
+      return;
+    }
+
     ui.setAuthBusy(true);
-    ui.setAuthMessage("Vinculando identidade à sua conta...");
+    ui.setIdentityBindProgress("Conectando ao Cloud Core…", 8, true);
+    ui.setAuthMessage("Confirmando identidade sem bloquear a interface...");
+
     try {
       const identity = await lineageService.claimIdentity(
         selectedLineageIdentityId,
-        ui.elements.identityConfirmation?.value || ""
+        confirmation,
+        {
+          onProgress: (message, percent) => {
+            ui.setIdentityBindProgress(message, percent, true);
+            ui.setAuthMessage(message);
+          }
+        }
       );
-      await authService.setDisplayName(identity.firstName).catch(() => {});
+
+      ui.setIdentityBindProgress("Vínculo confirmado.", 100, true);
       ui.setLineageIdentity(identity);
-      ui.setAuthMessage(`${identity.firstName} vinculado. Esta identidade agora pertence a esta conta.`, "success");
+      ui.setAuthMessage(`${identity.firstName} confirmado. Abrindo sua JORDAN...`, "success");
+
+      // Display name é complementar; nunca pode prender o fluxo de entrada.
+      authService.setDisplayName(identity.firstName).catch((error) => {
+        console.warn("JORDAN displayName:", error);
+      });
+
       jordanInitialized = false;
+      ui.setAuthBusy(false);
       await presentAuthenticatedIdentity(authService.currentUser);
     } catch (error) {
+      console.error("JORDAN identity bind:", error);
+      ui.setIdentityBindProgress("Vínculo não concluído.", 0, false);
       ui.setAuthMessage(error.message || "Não consegui vincular essa identidade.", "error");
     } finally {
       ui.setAuthBusy(false);
+      setTimeout(() => ui.setIdentityBindProgress("", 0, false), 900);
     }
   });
 

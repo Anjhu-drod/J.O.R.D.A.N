@@ -103,3 +103,30 @@ O projeto continua usando:
 **Publique o novo `firestore.rules` desta versão.** As regras V0.8 criam `lineageBindings` e permitem ao creator Jhuan leitura administrativa, mantendo escrita somente pelo dono de cada perfil.
 
 Leia `FIREBASE_SETUP.md`.
+
+## V0.8.1 — Identity Bind + Responsive Visual Pass
+
+Correção incremental sobre a V0.8.
+
+### Identity Bind
+- Remove o `runTransaction()` do primeiro vínculo de identidade, que podia ficar aguardando a rede sem devolver controle à interface.
+- Faz preflight direto no servidor antes de gravar.
+- Mostra progresso real de vínculo na tela.
+- Adiciona timeouts e mensagens específicas para regras, ausência do banco `(default)` e falhas de rede.
+- Se o binding for confirmado mas o profile atrasar, a JORDAN recupera a identidade pelo binding e repara o profile automaticamente.
+- Um UID continua não podendo assumir duas identidades e uma identidade continua não podendo pertencer a duas contas.
+
+### Desktop + mobile
+- Auth Gateway redesenhado para usar a altura real da viewport no PC.
+- O painel direito passa a rolar internamente em telas desktop baixas, sem criar layout gigante horizontal.
+- Tablet/celular usam composição própria em uma coluna, com controles maiores para toque.
+- Melhorias extras no calendário, HUD inferior, CORE e grids em telas pequenas.
+
+### Visual
+- Campo de partículas, horizonte holográfico e luz reativa ao ponteiro/toque.
+- Painéis com profundidade reativa.
+- Identidades com sweep holográfico e pulso de seleção.
+- Feedback de conexão/binding e animação de busy.
+- Novo `visualEffectsService.js`.
+
+Cache PWA: `jordan-v0.8.1`.

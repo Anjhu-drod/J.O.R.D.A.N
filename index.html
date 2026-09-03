@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.8.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.8.1" />
 </head>
 <body data-theme="crimson" class="auth-locked">
   <div class="fx-grid"></div>
@@ -18,6 +18,9 @@
   <div class="fx-scanlines"></div>
   <div class="fx-runes" aria-hidden="true"><i>零</i><i>影</i><i>火</i><i>心</i><i>界</i><i>星</i></div>
   <div class="fx-data-rain" aria-hidden="true"></div>
+  <div class="fx-particles" aria-hidden="true"></div>
+  <div class="fx-cursor-glow" aria-hidden="true"></div>
+  <div class="fx-horizon" aria-hidden="true"></div>
 
   <section id="authGate" class="auth-gate" aria-label="JORDAN Lineage Gateway">
     <div class="auth-nebula"></div>
@@ -111,6 +114,7 @@
         </section>
 
         <section id="identitySelectStage" class="auth-stage hidden" data-auth-stage="identity">
+          <div class="identity-stage-banner" aria-hidden="true"><span>LINEAGE // LINK</span><i></i><b>SECURE BIND</b></div>
           <span class="hud-label">LINEAGE IDENTITY BIND</span>
           <h3>Quem está entrando?</h3>
           <p class="auth-stage-copy">Uma identidade só pode ficar vinculada a uma conta Firebase. Para o primeiro vínculo, selecione seu nome e confirme o segundo nome.</p>
@@ -119,6 +123,10 @@
             <input id="identityConfirmation" class="system-input" autocomplete="off" placeholder="Confirmação" />
           </label>
           <button id="identityConfirmButton" class="auth-primary" type="button" disabled><span>VINCULAR IDENTIDADE</span><b>◆</b></button>
+          <div id="identityBindProgress" class="identity-bind-progress" aria-live="polite">
+            <div class="identity-bind-progress-head"><span id="identityBindProgressLabel">Preparando vínculo…</span><b>FIRESTORE</b></div>
+            <div class="identity-bind-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="identityBindProgressBar"></i></div>
+          </div>
           <p class="lineage-admin-disclosure">Privacidade da linhagem: cada membro possui sua área privada. O criador Jhuan tem acesso administrativo de leitura para manutenção e recuperação do sistema. Esse acesso não fica oculto dos usuários.</p>
         </section>
 
@@ -778,7 +786,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.8.0";
+    const JORDAN_ASSET_VERSION = "0.8.1";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

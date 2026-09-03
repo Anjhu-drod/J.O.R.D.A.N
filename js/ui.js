@@ -96,6 +96,9 @@ export class JordanUI {
       identityChoiceGrid: document.querySelector("#identityChoiceGrid"),
       identityConfirmation: document.querySelector("#identityConfirmation"),
       identityConfirmButton: document.querySelector("#identityConfirmButton"),
+      identityBindProgress: document.querySelector("#identityBindProgress"),
+      identityBindProgressBar: document.querySelector("#identityBindProgressBar"),
+      identityBindProgressLabel: document.querySelector("#identityBindProgressLabel"),
       authLoginTab: document.querySelector("#authLoginTab"),
       authRegisterTab: document.querySelector("#authRegisterTab"),
       authLoginForm: document.querySelector("#authLoginForm"),
@@ -199,6 +202,7 @@ export class JordanUI {
   }
 
   setAuthStage(stage = "family") {
+    document.body.dataset.authStage = stage;
     const map = {
       family: [this.elements.familyGateStage, "FAMILY KEY"],
       account: [this.elements.accountAuthStage, "INDIVIDUAL ACCESS"],
@@ -256,7 +260,22 @@ export class JordanUI {
     this.elements.authMessage.classList.toggle("success", type === "success");
   }
 
+  setIdentityBindProgress(message = "", percent = 0, active = false) {
+    if (this.elements.identityBindProgress) {
+      this.elements.identityBindProgress.classList.toggle("active", Boolean(active));
+    }
+    if (this.elements.identityBindProgressLabel) {
+      this.elements.identityBindProgressLabel.textContent = message || "Preparando vínculo…";
+    }
+    if (this.elements.identityBindProgressBar) {
+      const safe = Math.max(0, Math.min(100, Number(percent) || 0));
+      this.elements.identityBindProgressBar.style.width = `${safe}%`;
+      this.elements.identityBindProgressBar.parentElement?.setAttribute("aria-valuenow", String(safe));
+    }
+  }
+
   setAuthBusy(active = false) {
+    this.elements.authGate?.classList.toggle("busy", Boolean(active));
     this.elements.familyGateForm?.querySelectorAll("button,input").forEach((element) => { element.disabled = Boolean(active); });
     if (this.elements.identityConfirmButton) this.elements.identityConfirmButton.disabled = Boolean(active) || !document.querySelector(".identity-choice.active");
     this.elements.authLoginForm?.querySelectorAll("button,input").forEach((element) => {

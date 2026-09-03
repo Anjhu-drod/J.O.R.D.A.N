@@ -3,8 +3,8 @@ import {
   doc,
   getDoc,
   getDocFromCache,
+  getDocFromServer,
   getDocs,
-  runTransaction,
   serverTimestamp,
   setDoc
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
@@ -19,6 +19,8 @@ import {
 import { normalizeText } from "./utils.js";
 
 const FAMILY_GATE_STORAGE = "jordan.family-gate-v1";
+const SERVER_TIMEOUT_MS = 7000;
+const WRITE_TIMEOUT_MS = 9000;
 
 async function sha256(text) {
   const data = new TextEncoder().encode(String(text || ""));
@@ -28,6 +30,71 @@ async function sha256(text) {
 
 function normalizeName(value = "") {
   return normalizeText(value).replace(/[^a-z0-9]/g, "");
+}
+
+function timeoutError(message) {
+  const error = new Error(message);
+  error.code = "jordan/timeout";
+  return error;
+}
+
+
+function friendlyCloudError(error, fallback = "Não consegui concluir o vínculo agora.") {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "");
+  if (code.includes("permission-denied")) {
+    return new Error("O Firestore recusou o vínculo. Confira se o arquivo firestore.rules da V0.8 está publicado no banco (default).");
+  }
+  if (code.includes("not-found") || /database.*does not exist/i.test(message)) {
+    return new Error("O banco Cloud Firestore (default) ainda não está disponível neste projeto.");
+  }
+  if (code.includes("unavailable") || code.includes("network") || /offline|failed to fetch/i.test(message)) {
+    return new Error("Perdi a conexão com o Firestore durante a confirmação. Nada foi apagado; tente novamente quando a conexão estabilizar.");
+  }
+  return new Error(message || fallback);
+}
+
+function withTimeout(promise, ms, message) {
+  let timer = null;
+  return Promise.race([
+    Promise.resolve(promise).finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(timeoutError(message)), ms);
+    })
+  ]);
+}
+
+async function readServer(ref, label = "Firestore") {
+  if (!navigator.onLine) {
+    throw new Error(`${label} precisa de internet para confirmar este vínculo.`);
+  }
+  return withTimeout(
+    getDocFromServer(ref),
+    SERVER_TIMEOUT_MS,
+    `${label} demorou para responder. Verifique sua internet e tente novamente.`
+  );
+}
+
+async function writeServer(ref, data, options, { label, verify } = {}) {
+  const pending = setDoc(ref, data, options);
+  try {
+    await withTimeout(
+      pending,
+      WRITE_TIMEOUT_MS,
+      `${label || "O Firestore"} ainda não confirmou a gravação.`
+    );
+    return true;
+  } catch (error) {
+    // A escrita pode ter sido aceita exatamente quando o timeout aconteceu.
+    // Antes de informar falha, verificamos o servidor uma vez.
+    if (error?.code === "jordan/timeout" && navigator.onLine && typeof verify === "function") {
+      try {
+        const snap = await readServer(ref, label || "Firestore");
+        if (verify(snap)) return true;
+      } catch {}
+    }
+    throw error;
+  }
 }
 
 export class LineageService {
@@ -65,6 +132,45 @@ export class LineageService {
     return normalizeName(confirmationName) === normalizeName(member.confirmationName);
   }
 
+  async findOwnedBinding(user = auth.currentUser, { server = false } = {}) {
+    if (!user) return null;
+
+    for (const member of listLineageMembers()) {
+      const ref = doc(firestore, "lineageBindings", member.id);
+      let snap = null;
+      try {
+        snap = server ? await readServer(ref, "Identidade JORDAN") : await getDocFromCache(ref);
+      } catch {
+        if (!server && navigator.onLine) {
+          try { snap = await readServer(ref, "Identidade JORDAN"); } catch {}
+        }
+      }
+
+      if (snap?.exists?.() && snap.data()?.ownerUid === user.uid) {
+        return { member, binding: { id: member.id, ...snap.data() } };
+      }
+    }
+
+    return null;
+  }
+
+  async repairProfileFromBinding(user, member) {
+    if (!user || !member) return;
+    const profileRef = doc(firestore, "users", user.uid, "profile", "main");
+    const payload = {
+      lineageId: member.id,
+      lineageRole: member.role,
+      firstName: member.firstName,
+      displayName: user.displayName || member.firstName,
+      updatedAt: serverTimestamp()
+    };
+
+    // Reparação é complementar. Nunca deve bloquear a entrada da JORDAN.
+    Promise.resolve(setDoc(profileRef, payload, { merge: true })).catch((error) => {
+      console.warn("JORDAN Lineage: perfil aguardando reparação/sincronização.", error);
+    });
+  }
+
   async loadCurrentIdentity() {
     const user = auth.currentUser;
     if (!user) {
@@ -78,8 +184,9 @@ export class LineageService {
       let profileSnap = null;
       try { profileSnap = await getDocFromCache(profileRef); } catch {}
       if (!profileSnap?.exists?.() && navigator.onLine) {
-        try { profileSnap = await getDoc(profileRef); } catch {}
+        try { profileSnap = await readServer(profileRef, "Perfil JORDAN"); } catch {}
       }
+
       const lineageId = profileSnap?.exists?.() ? profileSnap.data()?.lineageId : null;
       if (lineageId && LINEAGE_MEMBERS[lineageId]) {
         this.identity = getLineageMember(lineageId);
@@ -90,13 +197,23 @@ export class LineageService {
       console.warn("JORDAN Lineage: perfil ainda indisponível.", error);
     }
 
+    // Recuperação importante: se o binding foi salvo e a aba fechou antes do
+    // perfil terminar, a identidade continua sendo encontrada sem travar o usuário.
+    const recovered = await this.findOwnedBinding(user).catch(() => null);
+    if (recovered?.member) {
+      this.identity = recovered.member;
+      this.binding = recovered.binding;
+      this.repairProfileFromBinding(user, recovered.member);
+      return recovered.member;
+    }
 
     return null;
   }
 
-  async claimIdentity(identityId, confirmationName) {
+  async claimIdentity(identityId, confirmationName, { onProgress } = {}) {
     const user = auth.currentUser;
     if (!user) throw new Error("Entre na sua conta antes de escolher sua identidade.");
+    if (!navigator.onLine) throw new Error("O primeiro vínculo de identidade precisa de internet. Depois disso a JORDAN continua funcionando offline.");
 
     const member = getLineageMember(identityId);
     if (!member) throw new Error("Identidade não reconhecida.");
@@ -107,55 +224,99 @@ export class LineageService {
     const bindingRef = doc(firestore, "lineageBindings", member.id);
     const profileRef = doc(firestore, "users", user.uid, "profile", "main");
 
-    // A identidade Jhuan ancora a linhagem. Isso evita que outras identidades
-    // sejam reivindicadas antes da conta administrativa do creator existir.
+    onProgress?.("Verificando conexão com o Cloud Core…", 18);
+
+    // Server read primeiro: evita o comportamento antigo em que runTransaction
+    // podia ficar aguardando a rede indefinidamente.
+    let bindingSnap;
+    try {
+      bindingSnap = await readServer(bindingRef, "Cloud de identidade");
+    } catch (error) {
+      throw friendlyCloudError(error, "Não consegui confirmar o Firestore agora.");
+    }
+
+    if (bindingSnap.exists() && bindingSnap.data()?.ownerUid !== user.uid) {
+      throw new Error(`${member.firstName} já está vinculado a outra conta.`);
+    }
+
+    onProgress?.("Validando exclusividade da identidade…", 35);
+
+    // Um mesmo Firebase UID não pode assumir duas identidades.
+    const owned = await this.findOwnedBinding(user, { server: true }).catch((error) => {
+      console.warn("JORDAN Lineage / owned binding:", error);
+      return null;
+    });
+    if (owned?.member && owned.member.id !== member.id) {
+      throw new Error(`Esta conta já está vinculada à identidade ${owned.member.firstName}.`);
+    }
+
     if (member.id !== "jhuan") {
       const creatorRef = doc(firestore, "lineageBindings", "jhuan");
-      let creatorSnap = null;
-      try { creatorSnap = await getDocFromCache(creatorRef); } catch {}
-      if (!creatorSnap?.exists?.() && navigator.onLine) {
-        try { creatorSnap = await getDoc(creatorRef); } catch {}
-      }
-      if (!creatorSnap?.exists?.()) {
+      const creatorSnap = await readServer(creatorRef, "Identidade do creator");
+      if (!creatorSnap.exists()) {
         throw new Error("A identidade do creator Jhuan precisa ser vinculada primeiro. Depois os demais membros podem fazer o cadastro.");
       }
     }
 
-    // Um mesmo Firebase UID não deve reivindicar duas identidades diferentes.
-    let currentProfile = null;
-    try { currentProfile = await getDocFromCache(profileRef); } catch {}
-    if (!currentProfile?.exists?.() && navigator.onLine) {
-      try { currentProfile = await getDoc(profileRef); } catch {}
-    }
-    const existingLineageId = currentProfile?.exists?.() ? currentProfile.data()?.lineageId : null;
-    if (existingLineageId && existingLineageId !== member.id) {
-      const existingMember = getLineageMember(existingLineageId);
-      throw new Error(`Esta conta já está vinculada à identidade ${existingMember?.firstName || existingLineageId}.`);
-    }
-
-    await runTransaction(firestore, async (transaction) => {
-      const existing = await transaction.get(bindingRef);
-      if (existing.exists() && existing.data()?.ownerUid !== user.uid) {
-        throw new Error(`${member.firstName} já está vinculado a outra conta.`);
+    // Também respeitamos um perfil já existente, se houver.
+    try {
+      const profileSnap = await readServer(profileRef, "Perfil JORDAN");
+      const existingLineageId = profileSnap.exists() ? profileSnap.data()?.lineageId : null;
+      if (existingLineageId && existingLineageId !== member.id) {
+        const existingMember = getLineageMember(existingLineageId);
+        throw new Error(`Esta conta já está vinculada à identidade ${existingMember?.firstName || existingLineageId}.`);
       }
+    } catch (error) {
+      if (!String(error?.message || "").includes("já está vinculada")) {
+        // Perfil inexistente é normal; erros reais de conexão já foram cobertos pelo preflight.
+        console.info("JORDAN Lineage: perfil ainda não existe; criando durante o vínculo.");
+      } else {
+        throw error;
+      }
+    }
 
-      transaction.set(bindingRef, {
-        identityId: member.id,
-        ownerUid: user.uid,
-        firstName: member.firstName,
-        role: member.role,
-        claimedAt: existing.exists() ? existing.data()?.claimedAt || serverTimestamp() : serverTimestamp(),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
+    onProgress?.("Gravando assinatura da linhagem…", 60);
 
-      transaction.set(profileRef, {
-        lineageId: member.id,
-        lineageRole: member.role,
-        firstName: member.firstName,
-        displayName: user.displayName || member.firstName,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    });
+    const bindingPayload = {
+      identityId: member.id,
+      ownerUid: user.uid,
+      firstName: member.firstName,
+      role: member.role,
+      claimedAt: bindingSnap.exists() ? bindingSnap.data()?.claimedAt || serverTimestamp() : serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    try {
+      await writeServer(bindingRef, bindingPayload, { merge: true }, {
+        label: "Vínculo da identidade",
+        verify: (snap) => snap?.exists?.() && snap.data()?.ownerUid === user.uid
+      });
+    } catch (error) {
+      throw friendlyCloudError(error, "O Firestore não confirmou o vínculo da identidade.");
+    }
+
+    onProgress?.("Sincronizando seu perfil…", 82);
+
+    const profilePayload = {
+      lineageId: member.id,
+      lineageRole: member.role,
+      firstName: member.firstName,
+      displayName: user.displayName || member.firstName,
+      updatedAt: serverTimestamp()
+    };
+
+    try {
+      await writeServer(profileRef, profilePayload, { merge: true }, {
+        label: "Perfil JORDAN",
+        verify: (snap) => snap?.exists?.() && snap.data()?.lineageId === member.id
+      });
+    } catch (error) {
+      // O binding é a fonte de verdade. Se apenas o perfil atrasar, a recuperação
+      // automática em loadCurrentIdentity repara na próxima abertura.
+      console.warn("JORDAN Lineage: binding confirmado, perfil pendente.", error);
+    }
+
+    onProgress?.("Identidade confirmada.", 100);
 
     this.identity = member;
     this.binding = { identityId: member.id, ownerUid: user.uid, role: member.role };
