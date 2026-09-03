@@ -70,6 +70,33 @@ export class JordanUI {
       musicClearButton: document.querySelector("#musicClearButton"),
       themeSelect: document.querySelector("#themeSelect"),
       systemCommandList: document.querySelector("#systemCommandList"),
+
+      authGate: document.querySelector("#authGate"),
+      authConnectionBadge: document.querySelector("#authConnectionBadge"),
+      authLoginTab: document.querySelector("#authLoginTab"),
+      authRegisterTab: document.querySelector("#authRegisterTab"),
+      authLoginForm: document.querySelector("#authLoginForm"),
+      authRegisterForm: document.querySelector("#authRegisterForm"),
+      authLoginEmail: document.querySelector("#authLoginEmail"),
+      authLoginPassword: document.querySelector("#authLoginPassword"),
+      authRememberLogin: document.querySelector("#authRememberLogin"),
+      authForgotPassword: document.querySelector("#authForgotPassword"),
+      authRegisterName: document.querySelector("#authRegisterName"),
+      authRegisterEmail: document.querySelector("#authRegisterEmail"),
+      authRegisterPassword: document.querySelector("#authRegisterPassword"),
+      authRegisterConfirm: document.querySelector("#authRegisterConfirm"),
+      authGoogleButton: document.querySelector("#authGoogleButton"),
+      authMessage: document.querySelector("#authMessage"),
+      logoutButton: document.querySelector("#logoutButton"),
+      syncNowButton: document.querySelector("#syncNowButton"),
+      accountAvatar: document.querySelector("#accountAvatar"),
+      accountName: document.querySelector("#accountName"),
+      accountEmail: document.querySelector("#accountEmail"),
+      accountUid: document.querySelector("#accountUid"),
+      accountSyncBadge: document.querySelector("#accountSyncBadge"),
+      cloudSyncStatus: document.querySelector("#cloudSyncStatus"),
+      cloudTopChip: document.querySelector("#cloudTopChip"),
+
       toastContainer: document.querySelector("#toastContainer"),
 
       companionDock: document.querySelector("#companionDock"),
@@ -123,6 +150,105 @@ export class JordanUI {
       tutorialDialog: document.querySelector("#tutorialDialog"),
       closeTutorialButton: document.querySelector("#closeTutorialButton")
     };
+  }
+
+
+  showAuthGate(message = "Entre para carregar sua memória JORDAN.") {
+    document.body.classList.add("auth-locked");
+    this.elements.authGate?.classList.remove("hidden");
+    this.setAuthMessage(message);
+  }
+
+  hideAuthGate() {
+    document.body.classList.remove("auth-locked");
+    this.elements.authGate?.classList.add("hidden");
+  }
+
+  setAuthMode(mode = "login") {
+    const register = mode === "register";
+    this.elements.authLoginTab?.classList.toggle("active", !register);
+    this.elements.authRegisterTab?.classList.toggle("active", register);
+    this.elements.authLoginForm?.classList.toggle("hidden", register);
+    this.elements.authRegisterForm?.classList.toggle("hidden", !register);
+    this.setAuthMessage(register ? "Crie sua JORDAN ID para sincronizar todos os dispositivos." : "Entre com e-mail ou Google.");
+  }
+
+  setAuthMessage(message = "", type = "") {
+    if (!this.elements.authMessage) return;
+    this.elements.authMessage.textContent = message;
+    this.elements.authMessage.classList.toggle("error", type === "error");
+    this.elements.authMessage.classList.toggle("success", type === "success");
+  }
+
+  setAuthBusy(active = false) {
+    this.elements.authLoginForm?.querySelectorAll("button,input").forEach((element) => {
+      if (element.id === "authRememberLogin") return;
+      element.disabled = Boolean(active);
+    });
+    this.elements.authRegisterForm?.querySelectorAll("button,input").forEach((element) => {
+      element.disabled = Boolean(active);
+    });
+    if (this.elements.authGoogleButton) this.elements.authGoogleButton.disabled = Boolean(active);
+  }
+
+  setAccountUser(user) {
+    if (!user) return;
+    const name = user.displayName || user.email?.split("@")[0] || "Usuário JORDAN";
+    if (this.elements.accountName) this.elements.accountName.textContent = name;
+    if (this.elements.accountEmail) this.elements.accountEmail.textContent = user.email || "Conta Firebase";
+    if (this.elements.accountUid) this.elements.accountUid.textContent = `${user.uid.slice(0, 6)}…${user.uid.slice(-4)}`;
+
+    if (this.elements.accountAvatar) {
+      this.elements.accountAvatar.textContent = "";
+      if (user.photoURL) {
+        const image = document.createElement("img");
+        image.src = user.photoURL;
+        image.alt = `Foto de ${name}`;
+        image.referrerPolicy = "no-referrer";
+        this.elements.accountAvatar.appendChild(image);
+      } else {
+        this.elements.accountAvatar.textContent = name.charAt(0).toUpperCase();
+      }
+    }
+  }
+
+  setCloudStatus({ online = navigator.onLine, pending = false, fromCache = false, error = null } = {}) {
+    let label = "CLOUD ONLINE";
+    let detail = "Firestore sincronizado.";
+    let className = "";
+
+    if (error) {
+      label = "CLOUD ERROR";
+      detail = error.message || "Erro de sincronização.";
+      className = "error";
+    } else if (!online) {
+      label = pending ? "OFFLINE · PENDING" : "OFFLINE MODE";
+      detail = pending
+        ? "Alterações salvas no cache. Serão enviadas quando a internet voltar."
+        : "Usando o cache offline do Firestore.";
+      className = "offline";
+    } else if (pending) {
+      label = "SYNC PENDING";
+      detail = "Enviando alterações para o Firebase...";
+      className = "pending";
+    } else if (fromCache) {
+      label = "CACHE READY";
+      detail = "Dados carregados do cache; aguardando confirmação da nuvem.";
+      className = "pending";
+    }
+
+    if (this.elements.accountSyncBadge) this.elements.accountSyncBadge.textContent = label;
+    if (this.elements.authConnectionBadge) {
+      this.elements.authConnectionBadge.textContent = online ? "FIREBASE ONLINE" : "FIREBASE OFFLINE";
+    }
+    if (this.elements.cloudSyncStatus) this.elements.cloudSyncStatus.textContent = detail;
+    if (this.elements.dbStatus) this.elements.dbStatus.textContent = label;
+    if (this.elements.cloudTopChip) {
+      this.elements.cloudTopChip.classList.remove("pending", "offline", "error");
+      if (className) this.elements.cloudTopChip.classList.add(className);
+      const text = this.elements.cloudTopChip.querySelector("b");
+      if (text) text.textContent = label.replace("CLOUD ", "");
+    }
   }
 
   startClock() {

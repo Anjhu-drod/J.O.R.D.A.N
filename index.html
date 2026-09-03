@@ -12,12 +12,115 @@
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
   <link rel="stylesheet" href="./css/styles.css" />
 </head>
-<body data-theme="crimson">
+<body data-theme="crimson" class="auth-locked">
   <div class="fx-grid"></div>
   <div class="fx-vignette"></div>
   <div class="fx-scanlines"></div>
   <div class="fx-runes" aria-hidden="true"><i>零</i><i>影</i><i>火</i><i>心</i><i>界</i><i>星</i></div>
   <div class="fx-data-rain" aria-hidden="true"></div>
+
+  <section id="authGate" class="auth-gate" aria-label="JORDAN ID">
+    <div class="auth-nebula"></div>
+    <div class="auth-gridlines"></div>
+    <div class="auth-shell">
+      <div class="auth-visual">
+        <div class="auth-core-wrap" aria-hidden="true">
+          <span class="auth-ring ring-a"></span>
+          <span class="auth-ring ring-b"></span>
+          <span class="auth-ring ring-c"></span>
+          <span class="auth-ring ring-d"></span>
+          <div class="auth-symbol">
+            <img src="./assets/jordan-symbol.png" alt="" />
+          </div>
+        </div>
+        <span class="auth-kicker">JORDAN ID / CLOUD MEMORY CORE</span>
+        <h1>Uma JORDAN.<br><em>Todos os seus dispositivos.</em></h1>
+        <p>Entre uma vez e sua agenda, memória e preferências acompanham você. Sem internet, o Firestore mantém um cache offline e sincroniza quando a conexão voltar.</p>
+        <div class="auth-feature-row">
+          <span><i></i> CLOUD SYNC</span>
+          <span><i></i> OFFLINE READY</span>
+          <span><i></i> PRIVATE UID</span>
+        </div>
+      </div>
+
+      <div class="auth-panel">
+        <div class="auth-panel-head">
+          <div>
+            <span class="hud-label">IDENTITY GATEWAY</span>
+            <h2>JORDAN ID</h2>
+          </div>
+          <span id="authConnectionBadge" class="auth-connection-badge">FIREBASE</span>
+        </div>
+
+        <div class="auth-tabs" role="tablist">
+          <button id="authLoginTab" class="active" type="button">ENTRAR</button>
+          <button id="authRegisterTab" type="button">CRIAR CONTA</button>
+        </div>
+
+        <form id="authLoginForm" class="auth-form">
+          <label>
+            E-MAIL
+            <input id="authLoginEmail" type="email" autocomplete="email" required placeholder="voce@email.com" />
+          </label>
+          <label>
+            SENHA
+            <div class="auth-password-wrap">
+              <input id="authLoginPassword" type="password" autocomplete="current-password" required placeholder="••••••••" />
+              <button class="auth-password-toggle" data-password-target="authLoginPassword" type="button">VER</button>
+            </div>
+          </label>
+
+          <div class="auth-options">
+            <label class="auth-remember">
+              <input id="authRememberLogin" type="checkbox" checked />
+              <span></span>
+              Permanecer conectado neste dispositivo
+            </label>
+            <button id="authForgotPassword" class="text-button" type="button">ESQUECI A SENHA</button>
+          </div>
+
+          <button id="authLoginButton" class="auth-primary" type="submit">
+            <span>ENTRAR NA JORDAN</span><b>→</b>
+          </button>
+        </form>
+
+        <form id="authRegisterForm" class="auth-form hidden">
+          <label>
+            COMO A JORDAN DEVE TE CHAMAR
+            <input id="authRegisterName" type="text" autocomplete="name" maxlength="60" required placeholder="Seu nome" />
+          </label>
+          <label>
+            E-MAIL
+            <input id="authRegisterEmail" type="email" autocomplete="email" required placeholder="voce@email.com" />
+          </label>
+          <label>
+            SENHA
+            <div class="auth-password-wrap">
+              <input id="authRegisterPassword" type="password" autocomplete="new-password" minlength="6" required placeholder="Mínimo 6 caracteres" />
+              <button class="auth-password-toggle" data-password-target="authRegisterPassword" type="button">VER</button>
+            </div>
+          </label>
+          <label>
+            CONFIRMAR SENHA
+            <input id="authRegisterConfirm" type="password" autocomplete="new-password" minlength="6" required placeholder="Repita a senha" />
+          </label>
+          <button id="authRegisterButton" class="auth-primary" type="submit">
+            <span>CRIAR JORDAN ID</span><b>+</b>
+          </button>
+        </form>
+
+        <div class="auth-divider"><span>OU</span></div>
+
+        <button id="authGoogleButton" class="auth-google" type="button">
+          <span class="google-g">G</span>
+          <strong>Continuar com Google</strong>
+        </button>
+
+        <p id="authMessage" class="auth-message">Verificando identidade...</p>
+        <p class="auth-security-note">A sessão fica salva neste dispositivo até você usar <strong>SAIR DA CONTA</strong>. Seus dados ficam separados pelo UID do Firebase.</p>
+      </div>
+    </div>
+  </section>
 
   <div class="app-shell">
     <header class="topbar">
@@ -30,6 +133,7 @@
       <div class="topbar-center">
         <span class="system-pulse"></span>
         <span id="topStatus">SYSTEM ONLINE</span>
+        <span id="cloudTopChip" class="cloud-top-chip"><i></i><b>CLOUD</b></span>
       </div>
 
       <div class="clock-box">
@@ -149,7 +253,7 @@
           <div>
             <span class="hud-label">JORDAN INTERNAL CALENDAR</span>
             <h2>Calendário</h2>
-            <p>Esta agenda pertence à própria JORDAN e fica salva na memória local.</p>
+            <p>Esta agenda pertence à própria JORDAN e sincroniza pela sua JORDAN ID. Offline, continua disponível no cache protegido do Firestore.</p>
           </div>
           <button id="newEventButton" class="hud-button primary">+ NOVO COMPROMISSO</button>
         </div>
@@ -208,7 +312,7 @@
               <button data-command="Jordan, fale com gírias">“Fale com gírias”</button>
               <button data-command="Jordan, fique mais formal">“Fique mais formal”</button>
             </div>
-            <p class="privacy-note">Nesta versão, essas informações ficam somente no armazenamento local do navegador deste dispositivo.</p>
+            <p class="privacy-note">Memórias pessoais sincronizam pela sua JORDAN ID. Offline, novas memórias ficam pendentes e sobem automaticamente quando a conexão voltar.</p>
           </article>
 
           <article class="hud-panel memory-list-panel">
@@ -236,9 +340,30 @@
         </div>
 
         <div class="system-grid">
+
+          <article class="hud-panel system-card account-card">
+            <div class="account-card-head">
+              <div id="accountAvatar" class="account-avatar">J</div>
+              <div>
+                <span>JORDAN ID</span>
+                <strong id="accountName">Usuário</strong>
+                <p id="accountEmail" class="system-description">—</p>
+              </div>
+            </div>
+            <div class="account-metrics">
+              <span>UID <b id="accountUid">—</b></span>
+              <span>SYNC <b id="accountSyncBadge">—</b></span>
+            </div>
+            <div class="backup-actions">
+              <button id="syncNowButton" class="hud-button small">SINCRONIZAR AGORA</button>
+              <button id="logoutButton" class="hud-button small danger-outline">SAIR DA CONTA</button>
+            </div>
+            <p class="system-description">Seu login permanece salvo neste dispositivo. Ao sair, a próxima abertura volta para a tela JORDAN ID.</p>
+          </article>
           <article class="hud-panel system-card">
-            <span>MEMÓRIA LOCAL</span>
-            <strong id="dbStatus">Iniciando...</strong>
+            <span>MEMÓRIA CLOUD / OFFLINE</span>
+            <strong id="dbStatus">Aguardando JORDAN ID...</strong>
+            <p id="cloudSyncStatus" class="system-description">Preparando sincronização...</p>
           </article>
           <article class="hud-panel system-card">
             <span>RECONHECIMENTO DE VOZ</span>

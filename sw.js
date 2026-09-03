@@ -1,10 +1,16 @@
-const CACHE_NAME = "jordan-v0.6.1";
+const CACHE_NAME = "jordan-v0.7.0";
+const FIREBASE_CACHE = "jordan-firebase-v12.18.0";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./css/styles.css",
   "./js/app.js",
+  "./js/authService.js",
+  "./js/firebaseConfig.js",
+  "./js/firebaseService.js",
+  "./js/cloudDataService.js",
+  "./js/legacyMigrationService.js",
   "./js/assistant.js",
   "./js/calendarService.js",
   "./js/dateParser.js",
@@ -43,7 +49,11 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+    caches.keys().then((keys) => Promise.all(
+      keys
+        .filter((key) => ![CACHE_NAME, FIREBASE_CACHE].includes(key))
+        .map((key) => caches.delete(key))
+    ))
   );
   self.clients.claim();
 });
@@ -54,7 +64,30 @@ self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
   const isSameOrigin = requestUrl.origin === self.location.origin;
 
-  // APIs externas nunca entram no cache offline da JORDAN.
+  // Os módulos do Firebase são necessários até quando a JORDAN reinicia offline.
+  // Depois da primeira abertura online, guardamos as respostas versionadas do
+  // CDN oficial para que os imports ESM continuem disponíveis sem conexão.
+  const isFirebaseModule =
+    requestUrl.hostname === "www.gstatic.com" &&
+    requestUrl.pathname.startsWith("/firebasejs/12.18.0/");
+
+  if (isFirebaseModule) {
+    event.respondWith(
+      caches.open(FIREBASE_CACHE).then(async (cache) => {
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+
+        const response = await fetch(event.request);
+        if (response.ok || response.type === "opaque") {
+          cache.put(event.request, response.clone());
+        }
+        return response;
+      })
+    );
+    return;
+  }
+
+  // Demais APIs externas continuam network-only.
   if (!isSameOrigin) {
     event.respondWith(fetch(event.request));
     return;

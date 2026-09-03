@@ -1,77 +1,32 @@
-# JORDAN V0.6.1 — JORDAN Music
+# JORDAN V0.7 — JORDAN ID / Cloud Memory Core
 
-Correção incremental feita em cima da V0.6.
+Patch incremental sobre a V0.6.1.
 
-## Correção principal
+## Destaques
 
-A integração do Spotify foi removida do player. A JORDAN agora possui uma biblioteca e um player próprios chamados **JORDAN Music**.
+- Tela de login JORDAN ID totalmente redesenhada.
+- Login com e-mail/senha.
+- Login com Google.
+- Sessão persistente: normalmente só é necessário entrar uma vez por dispositivo.
+- Botão de logout em SYS.
+- Cloud Firestore como fonte principal de agenda, memórias e configurações.
+- Firestore Persistent Local Cache para continuar funcionando offline.
+- Sincronização automática quando a internet volta.
+- Indicadores `CLOUD ONLINE`, `SYNC PENDING` e `OFFLINE MODE`.
+- Migração automática do antigo `JordanDB` para a conta Firebase.
+- O banco antigo é apagado somente depois de confirmar o envio ao Firestore.
+- Memória CORE do criador continua restaurada/protegida pela aplicação.
+- O nome da conta JORDAN ID pode preencher `profile.name` na primeira inicialização.
+- JORDAN Music continua local e offline; arquivos de áudio não são enviados ao Firestore.
 
-## Como funciona o JORDAN Music
+Leia `FIREBASE_SETUP.md` antes de testar Google Login e sincronização.
 
-1. Abra `SYS`.
-2. Em `JORDAN MUSIC`, clique em `+ ADICIONAR MÚSICAS`.
-3. Selecione arquivos de áudio do seu PC/celular.
-4. Os arquivos são salvos no IndexedDB do próprio navegador/dispositivo.
-5. Abra o painel `MEDIA` para ver biblioteca, player, volume, progresso, shuffle e repeat.
-6. Você também pode falar/escrever:
-   - `Toque uma música qualquer.`
-   - `Toque Numb.`
-   - `Toque uma música do Kamaitachi.`
+## Firebase
 
-A pesquisa acontece na biblioteca local. Se a faixa não estiver importada, a JORDAN avisa em vez de abrir Spotify/YouTube automaticamente.
+Projeto configurado: `jordan-a8722`.
 
-### Nome dos arquivos
+SDK Web usado por browser modules: Firebase JS `12.18.0`.
 
-Para organizar automaticamente artista e título, prefira:
+## Segurança
 
-`Artista - Música.mp3`
-
-Exemplo:
-
-`Linkin Park - Numb.mp3`
-
-## Controles do player
-
-- Play/Pause
-- Próxima
-- Anterior
-- Shuffle
-- Repeat off / all / one
-- Volume
-- Timeline / seek
-- Favorita
-- Busca na biblioteca
-
-Quando a JORDAN fala, a música abaixa temporariamente para a voz ficar clara e volta ao volume anterior ao terminar.
-
-## Comandos de sistema em inglês adicionados
-
-- `Pause the music`
-- `Play the music`
-- `Next track`
-- `Previous track`
-- `Shuffle the music`
-
-Eles aparecem automaticamente na lista de comandos do SYS com o botão de pronúncia.
-
-## Importante sobre armazenamento
-
-A biblioteca é local por dispositivo/navegador. Músicas importadas no PC não aparecem automaticamente no iPhone. Sincronização entre aparelhos deve ser feita futuramente pela JORDAN API, mas arquivos musicais grandes devem ter uma estratégia separada para não sobrecarregar o servidor.
-
-O navegador também pode limitar ou limpar armazenamento local em certas situações. Mantenha os arquivos originais guardados no aparelho.
-
-## Arquivo que deve ser APAGADO da V0.6
-
-`js/spotifyService.js`
-
-Ele não é mais importado nem usado.
-
-## Bug da V0.6 corrigido
-
-Alguns blocos adicionados à V0.6 ficaram com sequências literais `\\n` dentro de `app.js` e `voice.js`. Esses trechos foram restaurados para quebras de linha reais.
-
-## Cache
-
-Service Worker:
-
-`jordan-v0.6.1`
+O patch inclui `firestore.rules`. Publique essas regras no Firebase Console antes de usar a versão em produção.

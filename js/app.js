@@ -20,8 +20,13 @@ import {
   getSetting,
   importMemory,
   openDatabase,
-  setSetting
+  setSetting,
+  subscribeCloudChanges,
+  waitForCloudSync
 } from "./db.js";
+import { authService, friendlyAuthError } from "./authService.js";
+import { hasPersistentFirestoreCache } from "./firebaseService.js";
+import { migrateLegacyJordanDB } from "./legacyMigrationService.js";
 import { downloadJson } from "./utils.js";
 
 const calendar = new CalendarService();
@@ -51,6 +56,10 @@ let internetEnabled = true;
 let theme = "crimson";
 let idleTimer = null;
 let lastInteractionAt = Date.now();
+let jordanInitialized = false;
+let cloudUnsubscribe = null;
+let cloudRefreshTimer = null;
+let cloudState = { online: navigator.onLine, pending: false, fromCache: true, error: null };
 
 const voice = new VoiceService({
   silenceMs: 2000,
@@ -101,15 +110,43 @@ const reminders = new ReminderService(calendar, {
 });
 
 async function initialize() {
+  if (jordanInitialized) return;
+  jordanInitialized = true;
+
   ui.startClock();
   bindEvents();
+  ui.setAccountUser(authService.currentUser);
+  ui.setCloudStatus(cloudState);
 
   try {
     await openDatabase();
-    ui.elements.dbStatus.textContent = "Online";
+    ui.elements.dbStatus.textContent = hasPersistentFirestoreCache()
+      ? "CLOUD + OFFLINE CACHE"
+      : "CLOUD · CACHE TEMPORÁRIO";
+
+    const migration = await migrateLegacyJordanDB();
+    if (migration.migrated) {
+      ui.toast(
+        `Migrei ${migration.memoryCount} memórias e ${migration.eventCount} compromissos antigos para sua JORDAN ID.`,
+        "JORDAN CLOUD"
+      );
+    }
   } catch (error) {
-    ui.elements.dbStatus.textContent = "Erro";
-    ui.addMessage("JORDAN", `Não consegui iniciar minha memória: ${error.message}`);
+    console.error("JORDAN Cloud init:", error);
+    cloudState = { ...cloudState, error };
+    ui.setCloudStatus(cloudState);
+    ui.addMessage("JORDAN", `Não consegui iniciar minha memória compartilhada: ${error.message}`);
+  }
+
+  const accountUser = authService.currentUser;
+  if (accountUser?.displayName && !(await memory.get("profile.name"))) {
+    await memory.remember({
+      key: "profile.name",
+      label: "Seu nome",
+      value: accountUser.displayName,
+      type: "fact",
+      source: "jordan-id"
+    });
   }
 
   await assistant.initialize();
@@ -204,6 +241,25 @@ async function initialize() {
   }
 
   await ui.refreshAll();
+
+  cloudUnsubscribe?.();
+  cloudUnsubscribe = subscribeCloudChanges((status) => {
+    cloudState = { ...cloudState, ...status, error: status.error || null };
+    ui.setCloudStatus(cloudState);
+
+    if (["events", "memories"].includes(status.kind)) {
+      clearTimeout(cloudRefreshTimer);
+      cloudRefreshTimer = setTimeout(async () => {
+        if (!jordanInitialized) return;
+        try {
+          await ui.refreshAll();
+        } catch (error) {
+          console.warn("JORDAN Cloud refresh:", error);
+        }
+      }, 420);
+    }
+  });
+
   await registerServiceWorker();
   reminders.start();
   resetIdleTimer();
@@ -533,6 +589,8 @@ function bindEvents() {
   });
 
   window.addEventListener("online", () => {
+    cloudState = { ...cloudState, online: true };
+    ui.setCloudStatus(cloudState);
     ui.setInternetStatus({ enabled: internetEnabled, online: true });
     if (internetEnabled) internet.testConnection().then((test) => {
       ui.setInternetStatus({ enabled: internetEnabled, online: true, tested: test.ok });
@@ -540,6 +598,8 @@ function bindEvents() {
   });
 
   window.addEventListener("offline", () => {
+    cloudState = { ...cloudState, online: false, fromCache: true };
+    ui.setCloudStatus(cloudState);
     ui.setInternetStatus({ enabled: internetEnabled, online: false });
   });
 
@@ -925,4 +985,178 @@ async function registerServiceWorker() {
   }
 }
 
-initialize();
+
+
+function setAuthTab(mode) {
+  ui.setAuthMode(mode);
+}
+
+function bindAuthEvents() {
+  ui.elements.authLoginTab?.addEventListener("click", () => setAuthTab("login"));
+  ui.elements.authRegisterTab?.addEventListener("click", () => setAuthTab("register"));
+
+  document.querySelectorAll("[data-password-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = document.getElementById(button.dataset.passwordTarget);
+      if (!input) return;
+      const visible = input.type === "text";
+      input.type = visible ? "password" : "text";
+      button.textContent = visible ? "VER" : "OCULTAR";
+    });
+  });
+
+  ui.elements.authLoginForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    ui.setAuthBusy(true);
+    ui.setAuthMessage("Autenticando JORDAN ID...");
+
+    try {
+      await authService.loginEmail(
+        ui.elements.authLoginEmail.value,
+        ui.elements.authLoginPassword.value,
+        { remember: ui.elements.authRememberLogin.checked }
+      );
+      ui.setAuthMessage("Identidade confirmada. Carregando sua JORDAN...", "success");
+    } catch (error) {
+      ui.setAuthMessage(friendlyAuthError(error), "error");
+    } finally {
+      ui.setAuthBusy(false);
+    }
+  });
+
+  ui.elements.authRegisterForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const password = ui.elements.authRegisterPassword.value;
+    const confirm = ui.elements.authRegisterConfirm.value;
+
+    if (password !== confirm) {
+      ui.setAuthMessage("As duas senhas precisam ser iguais.", "error");
+      return;
+    }
+
+    ui.setAuthBusy(true);
+    ui.setAuthMessage("Criando sua JORDAN ID...");
+
+    try {
+      await authService.createAccount({
+        name: ui.elements.authRegisterName.value,
+        email: ui.elements.authRegisterEmail.value,
+        password,
+        remember: true
+      });
+      ui.setAuthMessage("JORDAN ID criada. Preparando sua memória...", "success");
+    } catch (error) {
+      ui.setAuthMessage(friendlyAuthError(error), "error");
+    } finally {
+      ui.setAuthBusy(false);
+    }
+  });
+
+  ui.elements.authGoogleButton?.addEventListener("click", async () => {
+    ui.setAuthBusy(true);
+    ui.setAuthMessage("Abrindo autenticação Google...");
+
+    try {
+      const result = await authService.loginGoogle({
+        remember: ui.elements.authRememberLogin?.checked !== false
+      });
+      if (result?.redirected) {
+        ui.setAuthMessage("Redirecionando para o Google...");
+      }
+    } catch (error) {
+      ui.setAuthMessage(friendlyAuthError(error), "error");
+      ui.setAuthBusy(false);
+    }
+  });
+
+  ui.elements.authForgotPassword?.addEventListener("click", async () => {
+    const email = ui.elements.authLoginEmail?.value?.trim();
+    if (!email) {
+      ui.setAuthMessage("Digite seu e-mail no campo acima para eu enviar a recuperação.", "error");
+      ui.elements.authLoginEmail?.focus();
+      return;
+    }
+
+    try {
+      await authService.resetPassword(email);
+      ui.setAuthMessage("Enviei o link de recuperação para seu e-mail.", "success");
+    } catch (error) {
+      ui.setAuthMessage(friendlyAuthError(error), "error");
+    }
+  });
+
+  ui.elements.syncNowButton?.addEventListener("click", async () => {
+    if (!navigator.onLine) {
+      ui.toast("Sem internet agora. O Firestore vai sincronizar automaticamente quando a conexão voltar.", "JORDAN CLOUD");
+      return;
+    }
+
+    ui.elements.syncNowButton.disabled = true;
+    cloudState = { ...cloudState, pending: true, online: true };
+    ui.setCloudStatus(cloudState);
+
+    try {
+      await waitForCloudSync();
+      cloudState = { online: true, pending: false, fromCache: false, error: null };
+      ui.setCloudStatus(cloudState);
+      ui.toast("Memória e agenda sincronizadas.", "JORDAN CLOUD");
+    } catch (error) {
+      cloudState = { ...cloudState, error };
+      ui.setCloudStatus(cloudState);
+      ui.toast("Não consegui confirmar a sincronização agora.", "JORDAN CLOUD");
+    } finally {
+      ui.elements.syncNowButton.disabled = false;
+    }
+  });
+
+  ui.elements.logoutButton?.addEventListener("click", async () => {
+    const confirmed = window.confirm("Sair da sua JORDAN ID neste dispositivo?");
+    if (!confirmed) return;
+
+    try {
+      voice.stop?.({ manual: true, clearPending: true });
+      voice.cancelSpeech?.({ resumeListening: false });
+      reminders.stop();
+      cloudUnsubscribe?.();
+      cloudUnsubscribe = null;
+      await authService.logout();
+      window.location.reload();
+    } catch (error) {
+      ui.toast(friendlyAuthError(error), "JORDAN ID");
+    }
+  });
+}
+
+async function boot() {
+  bindAuthEvents();
+  ui.showAuthGate("Verificando sua JORDAN ID...");
+
+  try {
+    await authService.consumeRedirectResult();
+  } catch (error) {
+    ui.setAuthMessage(friendlyAuthError(error), "error");
+  }
+
+  authService.watch(async (user) => {
+    if (!user) {
+      ui.showAuthGate("Entre com e-mail ou Google para carregar sua memória compartilhada.");
+      ui.setAuthBusy(false);
+      return;
+    }
+
+    ui.setAccountUser(user);
+    ui.setAuthMessage("JORDAN ID reconhecida. Sincronizando memória...", "success");
+
+    try {
+      await initialize();
+      ui.hideAuthGate();
+    } catch (error) {
+      console.error("JORDAN boot:", error);
+      jordanInitialized = false;
+      ui.showAuthGate();
+      ui.setAuthMessage(`Falha ao iniciar a JORDAN: ${error.message}`, "error");
+    }
+  });
+}
+
+boot();
