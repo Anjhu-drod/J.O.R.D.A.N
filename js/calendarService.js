@@ -2,7 +2,6 @@ import {
   deleteEvent,
   getAllEvents,
   getEvent,
-  getEventsBetween,
   putEvent
 } from "./db.js";
 
@@ -19,6 +18,21 @@ import {
   detectEventProfile,
   getEventProfile
 } from "./eventProfiles.js";
+import { getSystemBirthdays } from "./lineageConfig.js";
+
+const DAY_MS = 86400000;
+
+function addYears(date, years) {
+  const value = new Date(date);
+  value.setFullYear(value.getFullYear() + years);
+  return value;
+}
+
+function overlaps(event, start, end) {
+  const eventStart = new Date(event.startAt).getTime();
+  const eventEnd = new Date(event.endAt).getTime();
+  return eventStart < end.getTime() && eventEnd > start.getTime();
+}
 
 export class CalendarService {
   async create({
@@ -28,7 +42,11 @@ export class CalendarService {
     description = "",
     source = "manual",
     category = null,
-    reminderOffsets = null
+    reminderOffsets = null,
+    allDay = false,
+    recurrence = null,
+    locked = false,
+    system = false
   }) {
     const now = new Date();
     const profile = category
@@ -50,7 +68,13 @@ export class CalendarService {
       description: description.trim(),
       source,
       category: profile.id,
-      reminderOffsets: reminderOffsets ?? buildReminderOffsets(profile, startAt, now),
+      allDay: Boolean(allDay),
+      recurrence: recurrence || null,
+      locked: Boolean(locked),
+      system: Boolean(system),
+      reminderOffsets: allDay
+        ? (reminderOffsets ?? [720, 0])
+        : (reminderOffsets ?? buildReminderOffsets(profile, startAt, now)),
       deliveredReminderKeys: [],
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
@@ -60,14 +84,24 @@ export class CalendarService {
     return event;
   }
 
+  baseId(id = "") {
+    return String(id).split("::")[0];
+  }
+
   async update(id, changes) {
-    const existing = await getEvent(id);
+    if (String(id).startsWith("system-birthday-")) {
+      throw new Error("Aniversários da linhagem são eventos fixos do sistema.");
+    }
+
+    const baseId = this.baseId(id);
+    const existing = await getEvent(baseId);
     if (!existing) throw new Error("Compromisso não encontrado.");
+    if (existing.locked) throw new Error("Este compromisso é protegido pelo sistema.");
 
     const updated = {
       ...existing,
       ...changes,
-      id,
+      id: baseId,
       titleNormalized: normalizeText(changes.title ?? existing.title),
       updatedAt: new Date().toISOString()
     };
@@ -79,14 +113,11 @@ export class CalendarService {
     const end = new Date(updated.endAt);
     updated.durationMinutes = Math.max(1, Math.round((end - start) / 60000));
 
-    // Ao remarcar um compromisso, os avisos ainda não entregues são recriados.
-    if (changes.startAt || changes.endAt || changes.category) {
+    if (changes.startAt || changes.endAt || changes.category || changes.allDay) {
       const profile = getEventProfile(updated.category ?? "default");
-      updated.reminderOffsets = buildReminderOffsets(
-        profile,
-        start,
-        new Date()
-      );
+      updated.reminderOffsets = updated.allDay
+        ? [720, 0]
+        : buildReminderOffsets(profile, start, new Date());
       updated.deliveredReminderKeys = [];
     }
 
@@ -95,21 +126,29 @@ export class CalendarService {
   }
 
   async remove(id) {
-    await deleteEvent(id);
+    if (String(id).startsWith("system-birthday-")) {
+      throw new Error("Aniversários da linhagem não podem ser removidos.");
+    }
+    const baseId = this.baseId(id);
+    const event = await getEvent(baseId);
+    if (event?.locked) throw new Error("Este compromisso é protegido pelo sistema.");
+    await deleteEvent(baseId);
   }
 
   async get(id) {
-    return getEvent(id);
-  }
+    if (String(id).startsWith("system-birthday-")) {
+      const match = String(id).match(/^system-birthday-([a-z]+)-(\d{4})$/);
+      if (!match) return null;
+      return this.systemBirthdayForYear(match[1], Number(match[2]));
+    }
 
-  async all() {
-    const events = await getAllEvents();
-    return events.map((event) => this.ensureDefaults(event));
-  }
-
-  async between(start, end) {
-    const events = await getEventsBetween(start, end);
-    return events.map((event) => this.ensureDefaults(event));
+    const [baseId, yearText] = String(id).split("::");
+    const event = await getEvent(baseId);
+    if (!event) return null;
+    if (yearText && event.recurrence?.frequency === "yearly") {
+      return this.yearlyOccurrence(this.ensureDefaults(event), Number(yearText));
+    }
+    return this.ensureDefaults(event);
   }
 
   ensureDefaults(event) {
@@ -120,11 +159,92 @@ export class CalendarService {
     return {
       ...event,
       category: event.category ?? profile.id,
+      allDay: Boolean(event.allDay),
+      recurrence: event.recurrence || null,
+      locked: Boolean(event.locked),
+      system: Boolean(event.system),
       durationMinutes:
         event.durationMinutes ?? Math.max(1, Math.round((end - start) / 60000)),
       reminderOffsets: event.reminderOffsets ?? profile.reminderOffsets,
       deliveredReminderKeys: event.deliveredReminderKeys ?? []
     };
+  }
+
+  yearlyOccurrence(event, year) {
+    const originalStart = new Date(event.startAt);
+    const originalEnd = new Date(event.endAt);
+    const start = new Date(year, originalStart.getMonth(), originalStart.getDate(), originalStart.getHours(), originalStart.getMinutes(), 0, 0);
+    const duration = Math.max(1, originalEnd.getTime() - originalStart.getTime());
+    const end = new Date(start.getTime() + duration);
+    return {
+      ...event,
+      id: `${event.id}::${year}`,
+      recurrenceParentId: event.id,
+      virtualOccurrence: true,
+      startAt: start.toISOString(),
+      endAt: end.toISOString()
+    };
+  }
+
+  systemBirthdayForYear(identityId, year) {
+    const item = getSystemBirthdays().find((entry) => entry.identityId === identityId);
+    if (!item) return null;
+    const start = new Date(year, item.month - 1, item.day, 0, 0, 0, 0);
+    const end = new Date(start.getTime() + DAY_MS);
+    return {
+      id: `system-birthday-${identityId}-${year}`,
+      title: item.title,
+      titleNormalized: normalizeText(item.title),
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+      durationMinutes: 1440,
+      description: "Aniversário fixo da linhagem JORDAN.",
+      source: "lineage-system",
+      category: "birthday",
+      allDay: true,
+      recurrence: { frequency: "yearly", interval: 1 },
+      locked: true,
+      system: true,
+      reminderOffsets: [],
+      deliveredReminderKeys: []
+    };
+  }
+
+  systemBirthdaysBetween(start, end) {
+    const result = [];
+    for (let year = start.getFullYear() - 1; year <= end.getFullYear() + 1; year++) {
+      for (const birthday of getSystemBirthdays()) {
+        const occurrence = this.systemBirthdayForYear(birthday.identityId, year);
+        if (occurrence && overlaps(occurrence, start, end)) result.push(occurrence);
+      }
+    }
+    return result;
+  }
+
+  expandForRange(event, start, end) {
+    const normalized = this.ensureDefaults(event);
+    if (normalized.recurrence?.frequency !== "yearly") {
+      return overlaps(normalized, start, end) ? [normalized] : [];
+    }
+
+    const result = [];
+    for (let year = start.getFullYear() - 1; year <= end.getFullYear() + 1; year++) {
+      const occurrence = this.yearlyOccurrence(normalized, year);
+      if (overlaps(occurrence, start, end)) result.push(occurrence);
+    }
+    return result;
+  }
+
+  async between(start, end) {
+    const stored = await getAllEvents();
+    const expanded = stored.flatMap((event) => this.expandForRange(event, start, end));
+    const birthdays = this.systemBirthdaysBetween(start, end);
+    return [...expanded, ...birthdays].sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+  }
+
+  async all() {
+    const now = new Date();
+    return this.between(addYears(now, -1), addYears(now, 3));
   }
 
   async forDay(date) {
@@ -136,13 +256,13 @@ export class CalendarService {
   }
 
   async next(now = new Date()) {
-    const all = await this.all();
-    return all.find((event) => new Date(event.endAt) >= now) ?? null;
+    const upcoming = await this.upcoming(1, now);
+    return upcoming[0] ?? null;
   }
 
   async upcoming(limit = 20, now = new Date()) {
-    const all = await this.all();
-    return all
+    const events = await this.between(now, addYears(now, 3));
+    return events
       .filter((event) => new Date(event.endAt) >= now)
       .slice(0, limit);
   }
@@ -152,8 +272,8 @@ export class CalendarService {
     return this.between(start, addDays(start, days));
   }
 
-  async search(query, { futureOnly = false } = {}) {
-    const normalized = normalizeText(query);
+  async search(searchText, { futureOnly = false } = {}) {
+    const normalized = normalizeText(searchText);
     const now = new Date();
     const all = await this.all();
 
@@ -168,16 +288,15 @@ export class CalendarService {
   }
 
   async conflicts(startAt, endAt, ignoreId = null) {
-    const all = await this.all();
+    const candidates = await this.between(addDays(startAt, -1), addDays(endAt, 1));
     const start = startAt.getTime();
     const end = endAt.getTime();
 
-    return all.filter((event) => {
-      if (event.id === ignoreId) return false;
-
+    return candidates.filter((event) => {
+      if (event.id === ignoreId || event.recurrenceParentId === ignoreId) return false;
+      if (event.allDay) return false;
       const eventStart = new Date(event.startAt).getTime();
       const eventEnd = new Date(event.endAt).getTime();
-
       return start < eventEnd && end > eventStart;
     });
   }
@@ -188,6 +307,7 @@ export class CalendarService {
     minMinutes = 30
   } = {}) {
     const events = (await this.forDay(date))
+      .filter((event) => !event.allDay)
       .map((event) => ({
         ...event,
         start: new Date(event.startAt),
@@ -211,17 +331,12 @@ export class CalendarService {
       const clippedEnd = event.end > end ? end : event.end;
       const gap = Math.round((clippedStart - cursor) / 60000);
 
-      if (gap >= minMinutes) {
-        slots.push({ start: new Date(cursor), end: new Date(clippedStart) });
-      }
-
+      if (gap >= minMinutes) slots.push({ start: new Date(cursor), end: new Date(clippedStart) });
       if (clippedEnd > cursor) cursor = new Date(clippedEnd);
     }
 
     const finalGap = Math.round((end - cursor) / 60000);
-    if (finalGap >= minMinutes) {
-      slots.push({ start: new Date(cursor), end: new Date(end) });
-    }
+    if (finalGap >= minMinutes) slots.push({ start: new Date(cursor), end: new Date(end) });
 
     return slots;
   }

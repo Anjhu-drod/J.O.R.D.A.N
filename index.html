@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.7.2" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.8.0" />
 </head>
 <body data-theme="crimson" class="auth-locked">
   <div class="fx-grid"></div>
@@ -19,109 +19,114 @@
   <div class="fx-runes" aria-hidden="true"><i>零</i><i>影</i><i>火</i><i>心</i><i>界</i><i>星</i></div>
   <div class="fx-data-rain" aria-hidden="true"></div>
 
-  <section id="authGate" class="auth-gate" aria-label="JORDAN ID">
+  <section id="authGate" class="auth-gate" aria-label="JORDAN Lineage Gateway">
     <div class="auth-nebula"></div>
     <div class="auth-gridlines"></div>
-    <div class="auth-shell">
+    <div class="auth-starlight" aria-hidden="true"></div>
+    <div class="auth-shell lineage-auth-shell">
       <div class="auth-visual">
         <div class="auth-core-wrap" aria-hidden="true">
           <span class="auth-ring ring-a"></span>
           <span class="auth-ring ring-b"></span>
           <span class="auth-ring ring-c"></span>
           <span class="auth-ring ring-d"></span>
-          <div class="auth-symbol">
-            <img src="./assets/jordan-symbol.png" alt="" />
-          </div>
+          <span class="auth-sigil sigil-a">系</span>
+          <span class="auth-sigil sigil-b">継</span>
+          <div class="auth-symbol"><img src="./assets/jordan-symbol.png" alt="" /></div>
         </div>
-        <span class="auth-kicker">JORDAN ID / CLOUD MEMORY CORE</span>
-        <h1>Uma JORDAN.<br><em>Todos os seus dispositivos.</em></h1>
-        <p>Entre uma vez e sua agenda, memória e preferências acompanham você. Sem internet, o Firestore mantém um cache offline e sincroniza quando a conexão voltar.</p>
+        <span class="auth-kicker">JORDAN / LINEAGE ACCESS PROTOCOL</span>
+        <h1>Uma inteligência.<br><em>Uma linhagem.</em></h1>
+        <p>A JORDAN não é uma plataforma pública. O acesso pertence às identidades registradas nesta linhagem e acompanha cada pessoa entre seus dispositivos.</p>
         <div class="auth-feature-row">
-          <span><i></i> CLOUD SYNC</span>
-          <span><i></i> OFFLINE READY</span>
-          <span><i></i> PRIVATE UID</span>
+          <span><i></i> LINEAGE LOCK</span>
+          <span><i></i> CLOUD + OFFLINE</span>
+          <span><i></i> IDENTITY BIND</span>
         </div>
       </div>
 
-      <div class="auth-panel">
+      <div class="auth-panel lineage-auth-panel">
         <div class="auth-panel-head">
           <div>
             <span class="hud-label">IDENTITY GATEWAY</span>
-            <h2>JORDAN ID</h2>
+            <h2 id="authStageTitle">FAMILY KEY</h2>
           </div>
           <span id="authConnectionBadge" class="auth-connection-badge">FIREBASE</span>
         </div>
 
-        <div class="auth-tabs" role="tablist">
-          <button id="authLoginTab" class="active" type="button">ENTRAR</button>
-          <button id="authRegisterTab" type="button">CRIAR CONTA</button>
-        </div>
-
-        <form id="authLoginForm" class="auth-form">
-          <label>
-            E-MAIL
-            <input id="authLoginEmail" type="email" autocomplete="email" required placeholder="voce@email.com" />
-          </label>
-          <label>
-            SENHA
-            <div class="auth-password-wrap">
-              <input id="authLoginPassword" type="password" autocomplete="current-password" required placeholder="••••••••" />
-              <button class="auth-password-toggle" data-password-target="authLoginPassword" type="button">VER</button>
-            </div>
-          </label>
-
-          <div class="auth-options">
-            <label class="auth-remember">
-              <input id="authRememberLogin" type="checkbox" checked />
-              <span></span>
-              Permanecer conectado neste dispositivo
+        <section id="familyGateStage" class="auth-stage" data-auth-stage="family">
+          <div class="family-lock-visual" aria-hidden="true"><span></span><i>Ⅰ</i><i>Ⅱ</i><i>Ⅲ</i></div>
+          <p class="auth-stage-copy">Primeiro confirme a senha da linhagem. Ela libera o portal de autenticação individual neste dispositivo.</p>
+          <form id="familyGateForm" class="auth-form">
+            <label>SENHA DA LINHAGEM
+              <div class="auth-password-wrap">
+                <input id="familyGatePassword" type="password" inputmode="numeric" autocomplete="off" required placeholder="••••" />
+                <button class="auth-password-toggle" data-password-target="familyGatePassword" type="button">VER</button>
+              </div>
             </label>
-            <button id="authForgotPassword" class="text-button" type="button">ESQUECI A SENHA</button>
+            <button class="auth-primary" type="submit"><span>LIBERAR GATEWAY</span><b>→</b></button>
+          </form>
+        </section>
+
+        <section id="accountAuthStage" class="auth-stage hidden" data-auth-stage="account">
+          <div class="auth-tabs" role="tablist">
+            <button id="authLoginTab" class="active" type="button">ENTRAR</button>
+            <button id="authRegisterTab" type="button">CRIAR CONTA</button>
           </div>
 
-          <button id="authLoginButton" class="auth-primary" type="submit">
-            <span>ENTRAR NA JORDAN</span><b>→</b>
-          </button>
-        </form>
-
-        <form id="authRegisterForm" class="auth-form hidden">
-          <label>
-            COMO A JORDAN DEVE TE CHAMAR
-            <input id="authRegisterName" type="text" autocomplete="name" maxlength="60" required placeholder="Seu nome" />
-          </label>
-          <label>
-            E-MAIL
-            <input id="authRegisterEmail" type="email" autocomplete="email" required placeholder="voce@email.com" />
-          </label>
-          <label>
-            SENHA
-            <div class="auth-password-wrap">
-              <input id="authRegisterPassword" type="password" autocomplete="new-password" minlength="6" required placeholder="Mínimo 6 caracteres" />
-              <button class="auth-password-toggle" data-password-target="authRegisterPassword" type="button">VER</button>
+          <form id="authLoginForm" class="auth-form">
+            <label>E-MAIL
+              <input id="authLoginEmail" type="email" autocomplete="email" required placeholder="voce@email.com" />
+            </label>
+            <label>SENHA INDIVIDUAL
+              <div class="auth-password-wrap">
+                <input id="authLoginPassword" type="password" autocomplete="current-password" required placeholder="••••••••" />
+                <button class="auth-password-toggle" data-password-target="authLoginPassword" type="button">VER</button>
+              </div>
+            </label>
+            <div class="auth-options">
+              <label class="auth-remember"><input id="authRememberLogin" type="checkbox" checked /><span></span>Permanecer conectado</label>
+              <button id="authForgotPassword" class="text-button" type="button">ESQUECI A SENHA</button>
             </div>
-          </label>
-          <label>
-            CONFIRMAR SENHA
-            <input id="authRegisterConfirm" type="password" autocomplete="new-password" minlength="6" required placeholder="Repita a senha" />
-          </label>
-          <button id="authRegisterButton" class="auth-primary" type="submit">
-            <span>CRIAR JORDAN ID</span><b>+</b>
-          </button>
-        </form>
+            <button id="authLoginButton" class="auth-primary" type="submit"><span>ENTRAR NA JORDAN</span><b>→</b></button>
+          </form>
 
-        <div class="auth-divider"><span>OU</span></div>
+          <form id="authRegisterForm" class="auth-form hidden">
+            <label>E-MAIL INDIVIDUAL
+              <input id="authRegisterEmail" type="email" autocomplete="email" required placeholder="voce@email.com" />
+            </label>
+            <label>SENHA INDIVIDUAL
+              <div class="auth-password-wrap">
+                <input id="authRegisterPassword" type="password" autocomplete="new-password" minlength="6" required placeholder="Mínimo 6 caracteres" />
+                <button class="auth-password-toggle" data-password-target="authRegisterPassword" type="button">VER</button>
+              </div>
+            </label>
+            <label>CONFIRMAR SENHA
+              <input id="authRegisterConfirm" type="password" autocomplete="new-password" minlength="6" required placeholder="Repita a senha" />
+            </label>
+            <button id="authRegisterButton" class="auth-primary" type="submit"><span>CRIAR ACESSO INDIVIDUAL</span><b>+</b></button>
+          </form>
 
-        <button id="authGoogleButton" class="auth-google" type="button">
-          <span class="google-g">G</span>
-          <strong>Continuar com Google</strong>
-        </button>
+          <div class="auth-divider"><span>OU</span></div>
+          <button id="authGoogleButton" class="auth-google" type="button"><span class="google-g">G</span><strong>Continuar com Google</strong></button>
+        </section>
+
+        <section id="identitySelectStage" class="auth-stage hidden" data-auth-stage="identity">
+          <span class="hud-label">LINEAGE IDENTITY BIND</span>
+          <h3>Quem está entrando?</h3>
+          <p class="auth-stage-copy">Uma identidade só pode ficar vinculada a uma conta Firebase. Para o primeiro vínculo, selecione seu nome e confirme o segundo nome.</p>
+          <div id="identityChoiceGrid" class="identity-choice-grid"></div>
+          <label class="identity-confirm-label">SEGUNDO NOME DE CONFIRMAÇÃO
+            <input id="identityConfirmation" class="system-input" autocomplete="off" placeholder="Confirmação" />
+          </label>
+          <button id="identityConfirmButton" class="auth-primary" type="button" disabled><span>VINCULAR IDENTIDADE</span><b>◆</b></button>
+          <p class="lineage-admin-disclosure">Privacidade da linhagem: cada membro possui sua área privada. O criador Jhuan tem acesso administrativo de leitura para manutenção e recuperação do sistema. Esse acesso não fica oculto dos usuários.</p>
+        </section>
 
         <p id="authMessage" class="auth-message">Verificando identidade...</p>
-        <p class="auth-security-note">A sessão fica salva neste dispositivo até você usar <strong>SAIR DA CONTA</strong>. Seus dados ficam separados pelo UID do Firebase.</p>
+        <p class="auth-security-note">Depois do primeiro acesso, sua sessão e identidade permanecem salvas neste dispositivo até você usar <strong>SAIR DA CONTA</strong>.</p>
       </div>
     </div>
   </section>
-
   <div class="app-shell">
     <header class="topbar">
       <button class="wordmark" data-view-target="core" aria-label="Abrir núcleo da JORDAN">
@@ -151,7 +156,7 @@
         <span>02</span>
         <b>CAL</b>
       </button>
-      <button class="rail-button" data-view-target="memory" title="Memória">
+      <button id="memoryRailButton" class="rail-button creator-only" data-creator-only data-view-target="memory" title="Memória da linhagem">
         <span>03</span>
         <b>MEM</b>
       </button>
@@ -187,9 +192,9 @@
               <span class="voice-wave wave-3"></span>
               <span class="voice-wave wave-4"></span>
 
-              <span class="orbit orbit-a"></span>
-              <span class="orbit orbit-b"></span>
-              <span class="orbit orbit-c"></span>
+              <span id="internetTelemetryOrbit" class="telemetry-orbit telemetry-internet"><i id="internetTelemetryDot" class="telemetry-dot"></i></span>
+              <span id="memoryTelemetryOrbit" class="telemetry-orbit telemetry-memory"><i id="memoryTelemetryDot" class="telemetry-dot"></i></span>
+              <span id="executionTelemetryOrbit" class="telemetry-orbit telemetry-execution"><i id="executionTelemetryDot" class="telemetry-dot"></i></span>
 
               <span class="symbol-frame">
                 <img src="./assets/jordan-symbol.png" alt="Símbolo da JORDAN" />
@@ -200,6 +205,12 @@
               <span class="core-state-label">JORDAN</span>
               <h1 id="assistantStatus">Sistema pronto.</h1>
               <p id="liveTranscript" class="live-transcript">Áudio contínuo: fale normalmente. Comandos do sistema são em inglês.</p>
+            </div>
+
+            <div class="core-telemetry-legend">
+              <span><i class="legend-dot net"></i><b id="internetTelemetryLabel">NET · --</b></span>
+              <span><i class="legend-dot mem"></i><b id="memoryTelemetryLabel">CACHE · --</b></span>
+              <span><i class="legend-dot exec"></i><b id="executionTelemetryLabel">EXEC · IDLE</b></span>
             </div>
 
             <div class="core-actions">
@@ -249,59 +260,84 @@
       </section>
 
       <section id="view-calendar" class="view" data-view="calendar">
-        <div class="view-header">
+        <div class="view-header calendar-view-header">
           <div>
-            <span class="hud-label">JORDAN INTERNAL CALENDAR</span>
+            <span class="hud-label">JORDAN CHRONO / CALENDAR CORE</span>
             <h2>Calendário</h2>
-            <p>Esta agenda pertence à própria JORDAN e sincroniza pela sua JORDAN ID. Offline, continua disponível no cache protegido do Firestore.</p>
+            <p>Visão mensal completa, eventos anuais, aniversários fixos da linhagem e linguagem natural de datas.</p>
           </div>
           <button id="newEventButton" class="hud-button primary">+ NOVO COMPROMISSO</button>
         </div>
 
-        <div class="calendar-dashboard">
-          <article class="hud-panel calendar-summary">
-            <span class="hud-label">HOJE</span>
-            <div class="summary-number" id="todayCount">0</div>
-            <p>compromissos</p>
-            <div id="todayEvents" class="mini-event-list">
-              <div class="empty-state">Sem compromissos hoje.</div>
-            </div>
-          </article>
-
-          <article class="hud-panel agenda-panel">
-            <div class="panel-toolbar">
-              <div>
-                <span class="hud-label">TIMELINE</span>
-                <h3>Agenda da JORDAN</h3>
-              </div>
-              <div class="agenda-filters">
-                <input id="searchInput" type="search" placeholder="Buscar..." />
-                <select id="periodFilter">
-                  <option value="upcoming">Próximos</option>
-                  <option value="today">Hoje</option>
-                  <option value="week">7 dias</option>
-                  <option value="all">Todos</option>
-                </select>
-              </div>
-            </div>
-
-            <div id="agendaEvents" class="event-list">
-              <div class="empty-state">A agenda está vazia.</div>
-            </div>
-          </article>
+        <div class="calendar-command-strip">
+          <span>EXEMPLOS</span>
+          <button data-command="Vou viajar na próxima semana na quinta feira">viajar na próxima semana</button>
+          <button data-command="Dia 10 de outubro é aniversário do Pedro">aniversário anual</button>
+          <button data-command="Ontem foi revisão do projeto">registrar ontem</button>
         </div>
-      </section>
 
-      <section id="view-memory" class="view" data-view="memory">
+        <div class="calendar-v08-layout">
+          <article class="hud-panel month-calendar-panel">
+            <div class="month-calendar-head">
+              <div>
+                <span class="hud-label">MONTH MATRIX</span>
+                <h3><b id="calendarMonthLabel">Mês</b> <em id="calendarYearLabel">2026</em></h3>
+              </div>
+              <div class="month-nav-buttons">
+                <button id="calendarPrevButton" class="icon-button" type="button">‹</button>
+                <button id="calendarTodayButton" class="hud-button small" type="button">HOJE</button>
+                <button id="calendarNextButton" class="icon-button" type="button">›</button>
+              </div>
+            </div>
+            <div class="calendar-weekdays"><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span><span>DOM</span></div>
+            <div id="monthGrid" class="month-grid" aria-label="Calendário mensal"></div>
+          </article>
+
+          <aside class="calendar-side-stack">
+            <article class="hud-panel selected-day-panel">
+              <span class="hud-label">SELECTED DATE</span>
+              <h3 id="selectedDateLabel">Hoje</h3>
+              <div id="selectedDateEvents" class="mini-event-list"><div class="empty-state">Sem eventos.</div></div>
+            </article>
+            <article class="hud-panel calendar-summary">
+              <span class="hud-label">HOJE</span>
+              <div class="summary-number" id="todayCount">0</div>
+              <p>eventos</p>
+              <div id="todayEvents" class="mini-event-list"><div class="empty-state">Sem compromissos hoje.</div></div>
+            </article>
+          </aside>
+        </div>
+
+        <article class="hud-panel agenda-panel agenda-wide-panel">
+          <div class="panel-toolbar">
+            <div><span class="hud-label">TIMELINE</span><h3>Agenda da JORDAN</h3></div>
+            <div class="agenda-filters">
+              <input id="searchInput" type="search" placeholder="Buscar evento..." />
+              <select id="periodFilter">
+                <option value="upcoming">Próximos</option>
+                <option value="today">Hoje</option>
+                <option value="week">7 dias</option>
+                <option value="all">Todos</option>
+              </select>
+            </div>
+          </div>
+          <div id="agendaEvents" class="event-list"><div class="empty-state">A agenda está vazia.</div></div>
+        </article>
+      </section>
+      <section id="view-memory" class="view creator-only" data-creator-only data-view="memory">
         <div class="view-header">
           <div>
-            <span class="hud-label">ADAPTIVE PERSONAL MEMORY</span>
-            <h2>Memória</h2>
-            <p>Ensine fatos e preferências por voz ou texto. Memórias comuns podem ser apagadas; memórias CORE ficam protegidas.</p>
+            <span class="hud-label">CREATOR / LINEAGE MEMORY CONSOLE</span>
+            <h2>Memória da linhagem</h2>
+            <p>Console administrativo do criador. Usuários comuns não veem esta aba; a memória continua funcionando internamente para cada identidade.</p>
           </div>
         </div>
 
         <div class="memory-grid">
+          <article class="hud-panel lineage-memory-overview-panel">
+            <div class="panel-toolbar"><div><span class="hud-label">LINEAGE MEMORY MAP</span><h3>Visão administrativa</h3></div><button id="refreshLineageMemoryButton" class="hud-button small">ATUALIZAR</button></div>
+            <div id="lineageMemoryOverview" class="lineage-memory-overview"><div class="empty-state">Carregando identidades vinculadas...</div></div>
+          </article>
           <article class="hud-panel memory-info-panel">
             <span class="hud-label">HOW TO TEACH</span>
             <h3>Ela aprende conversando</h3>
@@ -359,6 +395,19 @@
               <button id="logoutButton" class="hud-button small danger-outline">SAIR DA CONTA</button>
             </div>
             <p class="system-description">Seu login permanece salvo neste dispositivo. Ao sair, a próxima abertura volta para a tela JORDAN ID.</p>
+          </article>
+          <article class="hud-panel system-card lineage-card">
+            <span>LINEAGE IDENTITY</span>
+            <strong id="lineageIdentityStatus">Não vinculada</strong>
+            <p id="lineageRelationSummary" class="system-description">A árvore familiar é usada para entender expressões como “minha mãe” e “meu pai”.</p>
+          </article>
+          <article class="hud-panel system-card voice-lock-card">
+            <span>VOICE LOCK · EXPERIMENTAL</span>
+            <strong id="voiceIdentityStatus">Desativado</strong>
+            <label class="hud-toggle compact"><input id="voiceIdentityToggle" type="checkbox" /><span class="toggle-track"><i></i></span><b>EXIGIR PERFIL DE VOZ</b></label>
+            <label class="hud-toggle compact"><input id="thirdPartyConversationToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>PERMITIR CONVERSAS DE TERCEIROS</b></label>
+            <div class="backup-actions"><button id="enrollVoiceButton" class="hud-button small">CADASTRAR MINHA VOZ · 8s</button><button id="clearVoiceProfileButton" class="hud-button small danger-outline">APAGAR PERFIL</button></div>
+            <p class="system-description">O perfil fica somente neste dispositivo. É uma trava experimental por características espectrais da voz, não substitui senha, Google ou biometria nativa.</p>
           </article>
           <article class="hud-panel system-card">
             <span>MEMÓRIA CLOUD / OFFLINE</span>
@@ -600,6 +649,11 @@
         </label>
       </div>
 
+      <div class="event-mode-row">
+        <label class="hud-check"><input id="eventAllDay" type="checkbox" /><span></span>DIA INTEIRO</label>
+        <label class="hud-check"><input id="eventYearly" type="checkbox" /><span></span>REPETIR TODO ANO</label>
+      </div>
+
       <label>
         Duração
         <select id="eventDuration">
@@ -724,7 +778,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.7.2";
+    const JORDAN_ASSET_VERSION = "0.8.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

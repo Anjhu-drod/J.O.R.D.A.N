@@ -28,6 +28,11 @@ import { authService, friendlyAuthError } from "./authService.js";
 import { hasPersistentFirestoreCache } from "./firebaseService.js";
 import { migrateLegacyJordanDB } from "./legacyMigrationService.js";
 import { downloadJson } from "./utils.js";
+import { lineageService } from "./lineageService.js";
+import { listLineageMembers, LINEAGE_PRIVACY_NOTICE } from "./lineageConfig.js";
+import { lineageAdminService } from "./lineageAdminService.js";
+import { SystemTelemetryService } from "./systemTelemetryService.js";
+import { voiceIdentityService } from "./voiceIdentityService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -44,9 +49,11 @@ const assistant = new JordanAssistant(calendar, memory, stories, {
   media,
   science,
   appLauncher,
-  originalSongs
+  originalSongs,
+  lineage: lineageService
 });
 const ui = new JordanUI(calendar, memory);
+const telemetry = new SystemTelemetryService({ onUpdate: (data) => ui.updateTelemetry(data) });
 
 let deferredInstallPrompt = null;
 let voiceEnabled = true;
@@ -60,18 +67,29 @@ let jordanInitialized = false;
 let cloudUnsubscribe = null;
 let cloudRefreshTimer = null;
 let cloudState = { online: navigator.onLine, pending: false, fromCache: true, error: null };
+let selectedLineageIdentityId = null;
+let voiceIdentityEnabled = false;
+let allowThirdPartyConversation = true;
 
 const voice = new VoiceService({
   silenceMs: 2000,
   onTranscript: async (transcript) => {
-    await handleCommand(transcript, { fromVoice: true });
+    const speaker = voiceIdentityService.verifyRecent();
+    await handleCommand(transcript, { fromVoice: true, speaker });
   },
-  onInterimTranscript: (transcript) => ui.setInterimTranscript(transcript),
-  onStatusChange: (status) => ui.setStatus(status),
+  onInterimTranscript: (transcript) => {
+    ui.setInterimTranscript(transcript);
+    if (transcript) telemetry.setExecution("user-speaking");
+  },
+  onStatusChange: (status) => {
+    ui.setStatus(status);
+    if (/processando/i.test(status)) telemetry.setExecution("processing");
+  },
   onListeningChange: (active) => ui.setListening(active),
   onSpeakingChange: (active) => {
     ui.setSpeaking(active);
     media.setDucked(active);
+    telemetry.setExecution(active ? "jordan-speaking" : "idle");
   },
   onLanguageDetected: (language) => ui.setLanguageStatus(languageMode, language)
 });
@@ -191,6 +209,21 @@ async function initialize() {
   ui.setAccountUser(authService.currentUser);
   ui.setCloudStatus(cloudState);
 
+  const lineageIdentity = lineageService.currentIdentity;
+  ui.setLineageIdentity(lineageIdentity);
+  ui.setCreatorMode(lineageService.isCreator);
+  voiceIdentityService.setIdentity(lineageIdentity?.id || null);
+  if (ui.elements.lineageRelationSummary && lineageIdentity) {
+    const mother = lineageService.relationAnswer("mother");
+    const father = lineageService.relationAnswer("father");
+    const parts = [];
+    if (mother) parts.push(`mãe: ${mother}`);
+    if (father) parts.push(`pai: ${father}`);
+    ui.elements.lineageRelationSummary.textContent = parts.length
+      ? `Árvore ativa · ${parts.join(" · ")}`
+      : "Árvore da linhagem ativa para esta identidade.";
+  }
+
   await startupCloudValue("abertura da memória", async () => {
     await openDatabase();
     ui.elements.dbStatus.textContent = hasPersistentFirestoreCache()
@@ -205,7 +238,8 @@ async function initialize() {
   });
 
   const accountUser = authService.currentUser;
-  if (accountUser?.displayName) {
+  const identityName = lineageIdentity?.firstName || accountUser?.displayName;
+  if (identityName) {
     const currentName = await startupCloudValue(
       "nome do perfil",
       () => memory.get("profile.name"),
@@ -218,9 +252,9 @@ async function initialize() {
         () => memory.remember({
           key: "profile.name",
           label: "Seu nome",
-          value: accountUser.displayName,
+          value: identityName,
           type: "fact",
-          source: "jordan-id"
+          source: "lineage-id"
         }),
         null
       );
@@ -245,6 +279,8 @@ async function initialize() {
   }
   internetEnabled = await startupCloudValue("internetEnabled", () => getSetting("internetEnabled", true), true);
   theme = await startupCloudValue("theme", () => getSetting("theme", "crimson"), "crimson");
+  voiceIdentityEnabled = await startupCloudValue("voiceIdentityEnabled", () => getSetting("voiceIdentityEnabled", false), false);
+  allowThirdPartyConversation = await startupCloudValue("allowThirdPartyConversation", () => getSetting("allowThirdPartyConversation", true), true);
 
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
@@ -253,6 +289,10 @@ async function initialize() {
 
   if (ui.elements.languageModeSelect) ui.elements.languageModeSelect.value = languageMode;
   if (ui.elements.themeSelect) ui.elements.themeSelect.value = theme;
+  if (ui.elements.voiceIdentityToggle) ui.elements.voiceIdentityToggle.checked = voiceIdentityEnabled;
+  if (ui.elements.thirdPartyConversationToggle) ui.elements.thirdPartyConversationToggle.checked = allowThirdPartyConversation;
+  voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
+  updateVoiceIdentityStatus();
   ui.setLanguageStatus(languageMode, voice.currentLanguage);
   ui.setInternetStatus({ enabled: internetEnabled, online: navigator.onLine });
   ui.setLexiconStatus(getLexiconStats());
@@ -332,6 +372,10 @@ async function initialize() {
   }
 
   await startupCloudValue("atualização da interface", () => ui.refreshAll(), null);
+  if (lineageService.isCreator) {
+    refreshCreatorMemoryOverview().catch((error) => console.warn("Creator memory overview:", error));
+  }
+  telemetry.start();
 
   cloudUnsubscribe?.();
   try {
@@ -345,6 +389,9 @@ async function initialize() {
           if (!jordanInitialized) return;
           try {
             await ui.refreshAll();
+            if (lineageService.isCreator && status.kind === "memories") {
+              await refreshCreatorMemoryOverview();
+            }
           } catch (error) {
             console.warn("JORDAN Cloud refresh:", error);
           }
@@ -363,6 +410,27 @@ async function initialize() {
 
   ui.elements.commandInput.focus();
 }
+
+function updateVoiceIdentityStatus(extra = "") {
+  const target = ui.elements.voiceIdentityStatus;
+  if (!target) return;
+  if (!voiceIdentityEnabled) {
+    target.textContent = "Desativado";
+    return;
+  }
+  if (!voiceIdentityService.hasProfile()) {
+    target.textContent = "Ativo · perfil ainda não cadastrado";
+    return;
+  }
+  target.textContent = extra || "Ativo · perfil local cadastrado";
+}
+
+async function refreshCreatorMemoryOverview() {
+  if (!lineageService.isCreator) return;
+  const groups = await lineageAdminService.getMemoryOverview();
+  ui.renderLineageMemoryOverview(groups);
+}
+
 
 function updateVoiceStatus() {
   if (!voice.synthesisSupported) {
@@ -601,6 +669,10 @@ function bindEvents() {
     ui.openView("calendar");
   });
 
+  ui.elements.calendarPrevButton?.addEventListener("click", () => { registerInteraction(); ui.moveCalendarMonth(-1); });
+  ui.elements.calendarNextButton?.addEventListener("click", () => { registerInteraction(); ui.moveCalendarMonth(1); });
+  ui.elements.calendarTodayButton?.addEventListener("click", () => { registerInteraction(); ui.goCalendarToday(); });
+
   ui.elements.alwaysListeningToggle.addEventListener("change", async (event) => {
     registerInteraction();
     const enabled = event.target.checked;
@@ -625,11 +697,60 @@ function bindEvents() {
   ui.elements.newEventButton.addEventListener("click", () => ui.openEventDialog());
   ui.elements.closeDialogButton.addEventListener("click", () => ui.closeEventDialog());
   ui.elements.cancelEventButton.addEventListener("click", () => ui.closeEventDialog());
+  ui.elements.eventAllDay?.addEventListener("change", () => ui.syncEventModeFields());
   ui.elements.eventForm.addEventListener("submit", saveEventFromForm);
   ui.elements.deleteEventButton.addEventListener("click", deleteEventFromForm);
 
   ui.elements.closeEmergencyButton.addEventListener("click", () => ui.closeEmergencyPanel());
   ui.elements.closeTutorialButton.addEventListener("click", () => ui.closeTutorialPanel());
+
+  ui.elements.voiceIdentityToggle?.addEventListener("change", async (event) => {
+    registerInteraction();
+    voiceIdentityEnabled = Boolean(event.target.checked);
+    await setSetting("voiceIdentityEnabled", voiceIdentityEnabled);
+    voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
+    updateVoiceIdentityStatus();
+    ui.toast(voiceIdentityEnabled
+      ? "Voice Lock experimental ativado. Cadastre sua voz neste dispositivo antes de usar como trava."
+      : "Voice Lock desativado.", "JORDAN VOICE LOCK");
+  });
+
+  ui.elements.thirdPartyConversationToggle?.addEventListener("change", async (event) => {
+    allowThirdPartyConversation = Boolean(event.target.checked);
+    await setSetting("allowThirdPartyConversation", allowThirdPartyConversation);
+    voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
+  });
+
+  ui.elements.enrollVoiceButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const wasAlwaysListening = voice.alwaysListening;
+    voice.stop({ manual: false, clearPending: true });
+    ui.elements.enrollVoiceButton.disabled = true;
+    try {
+      ui.toast("Fale naturalmente por 8 segundos. Exemplo: 'Jordan, sistema pronto. Hoje eu vou organizar minha agenda.'", "CADASTRO DE VOZ", 9000);
+      updateVoiceIdentityStatus("Capturando voz · 0%");
+      await voiceIdentityService.enroll({
+        durationMs: 8000,
+        onProgress: (value) => updateVoiceIdentityStatus(`Capturando voz · ${Math.round(value * 100)}%`)
+      });
+      updateVoiceIdentityStatus("Ativo · perfil local cadastrado");
+      ui.toast("Perfil de voz salvo somente neste dispositivo.", "JORDAN VOICE LOCK");
+    } catch (error) {
+      updateVoiceIdentityStatus(`Falha no cadastro · ${error.message}`);
+      ui.toast(error.message, "JORDAN VOICE LOCK");
+    } finally {
+      ui.elements.enrollVoiceButton.disabled = false;
+      if (wasAlwaysListening) voice.setAlwaysListening(true);
+    }
+  });
+
+  ui.elements.clearVoiceProfileButton?.addEventListener("click", () => {
+    if (!window.confirm("Apagar o perfil de voz local desta identidade neste dispositivo?")) return;
+    voiceIdentityService.clearProfile();
+    updateVoiceIdentityStatus();
+  });
+
+  ui.elements.refreshLineageMemoryButton?.addEventListener("click", () => refreshCreatorMemoryOverview());
 
   ui.elements.notificationButton.addEventListener("click", async () => {
     registerInteraction();
@@ -743,7 +864,7 @@ async function toggleVoice() {
   voice.start({ always: false });
 }
 
-async function handleCommand(text, { fromVoice = false } = {}) {
+async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
   registerInteraction();
 
   // Digitar ou falar um novo comando sempre pode interromper a fala atual.
@@ -752,6 +873,52 @@ async function handleCommand(text, { fromVoice = false } = {}) {
   ui.addMessage("VOCÊ", text);
   ui.setInterimTranscript("");
   ui.setStatus("Processando...");
+  telemetry.setExecution("processing");
+
+  if (fromVoice && voiceIdentityEnabled && !speaker?.authorized) {
+    const score = Math.round((speaker?.score || 0) * 100);
+
+    if (!allowThirdPartyConversation) {
+      const message = speaker?.reason === "no-profile"
+        ? "O Voice Lock está ativo, mas a voz autorizada ainda não foi cadastrada neste dispositivo. Use SYS para fazer o cadastro."
+        : `Essa voz não correspondeu ao perfil autorizado${score ? ` (${score}% de similaridade experimental)` : ""}. Conversas de terceiros estão desligadas.`;
+      ui.addMessage("JORDAN", message);
+      ui.setStatus("VOICE LOCK · ACESSO BLOQUEADO");
+      telemetry.setExecution("idle");
+      if (voiceEnabled && voice.synthesisSupported) {
+        const profile = assistant.getPersonality();
+        await voice.speak(message, { volume: assistantVolume, rate: profile.voice.rate, pitch: profile.voice.pitch, mood: "serious" });
+      }
+      return;
+    }
+
+    // Terceiros entram em uma rota separada e estritamente read-only. Não importa
+    // se uma frase escapa do regex de comandos: ela nunca chega ao execute() normal.
+    const readOnlyResult = await assistant.executeReadOnly(text);
+    ui.addMessage("JORDAN", readOnlyResult.text);
+    ui.setStatus("VOICE LOCK · CONVERSA DE TERCEIRO");
+
+    if (readOnlyResult.sourceUrl) {
+      ui.addSourceLink(readOnlyResult.sourceTitle || "Pesquisa", readOnlyResult.sourceUrl, readOnlyResult.source || "WEB");
+    }
+
+    if (voiceEnabled && voice.synthesisSupported && readOnlyResult.speak) {
+      const profile = assistant.getPersonality();
+      await voice.speak(readOnlyResult.speak, {
+        volume: assistantVolume,
+        rate: profile.voice.rate,
+        pitch: profile.voice.pitch,
+        mood: readOnlyResult.mood || "neutral",
+        language: readOnlyResult.language || "pt"
+      });
+    } else {
+      ui.setStatus("Sistema pronto.");
+    }
+
+    telemetry.setExecution("idle");
+    resetIdleTimer();
+    return;
+  }
 
   try {
     const systemCommand = matchSystemCommand(text);
@@ -764,7 +931,7 @@ async function handleCommand(text, { fromVoice = false } = {}) {
     ui.addMessage("JORDAN", result.text);
 
     if (result.refreshAgenda) {
-      await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda()]);
+      await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
     }
 
     if (result.refreshMemory) await ui.renderMemory();
@@ -847,6 +1014,7 @@ async function handleCommand(text, { fromVoice = false } = {}) {
     ui.addMessage("JORDAN", `Ocorreu um erro ao processar isso: ${error.message}`);
     ui.setStatus("Erro.");
   } finally {
+    if (!voice.isSpeaking) telemetry.setExecution("idle");
     resetIdleTimer();
   }
 }
@@ -884,8 +1052,12 @@ async function executeSystemCommand(command) {
   }
 
   if (id === "open_memory") {
+    if (!lineageService.isCreator) {
+      ui.toast("A memória continua ativa em segundo plano. A visualização administrativa é exclusiva do criador.", "JORDAN MEMORY");
+      return;
+    }
     ui.openView("memory");
-    ui.toast("Memória aberta.");
+    ui.toast("Console de memória da linhagem aberto.");
     return;
   }
 
@@ -1039,21 +1211,35 @@ async function saveEventFromForm(event) {
   const title = ui.elements.eventTitle.value.trim();
   const date = ui.elements.eventDate.value;
   const time = ui.elements.eventTime.value;
-  const duration = Number(ui.elements.eventDuration.value);
+  const duration = Number(ui.elements.eventDuration.value || 60);
   const description = ui.elements.eventDescription.value.trim();
-  if (!title || !date || !time) return;
+  const allDay = Boolean(ui.elements.eventAllDay?.checked);
+  const yearly = Boolean(ui.elements.eventYearly?.checked);
+  if (!title || !date || (!allDay && !time)) return;
 
-  const startAt = new Date(`${date}T${time}:00`);
-  const endAt = new Date(startAt.getTime() + duration * 60000);
+  const startAt = allDay ? new Date(`${date}T00:00:00`) : new Date(`${date}T${time}:00`);
+  const endAt = allDay
+    ? new Date(startAt.getTime() + 86400000)
+    : new Date(startAt.getTime() + duration * 60000);
   const profile = detectEventProfile(`${title} ${description}`);
+  const recurrence = yearly ? { frequency: "yearly", interval: 1 } : null;
 
   if (id) {
-    await calendar.update(id, { title, description, startAt, endAt, category: profile.id });
-    ui.addMessage("JORDAN", `Atualizei o compromisso “${title}”.`);
+    await calendar.update(id, { title, description, startAt, endAt, category: profile.id, allDay, recurrence });
+    ui.addMessage("JORDAN", `Atualizei o compromisso “${title}”.${yearly ? " Ele se repete todo ano." : ""}`);
   } else {
-    const conflicts = await calendar.conflicts(startAt, endAt);
-    await calendar.create({ title, description, startAt, endAt, source: "manual", category: profile.id });
-    let message = `Adicionei “${title}” à minha agenda.`;
+    const conflicts = allDay ? [] : await calendar.conflicts(startAt, endAt);
+    await calendar.create({
+      title,
+      description,
+      startAt,
+      endAt,
+      source: "manual",
+      category: profile.id,
+      allDay,
+      recurrence
+    });
+    let message = `Adicionei “${title}” à minha agenda.${allDay ? " Como evento de dia inteiro." : ""}${yearly ? " Vai se repetir todo ano." : ""}`;
     if (conflicts.length) message += ` Atenção: ele conflita com “${conflicts[0].title}”.`;
     ui.addMessage("JORDAN", message);
   }
@@ -1096,6 +1282,49 @@ function setAuthTab(mode) {
   ui.setAuthMode(mode);
 }
 
+async function presentAuthenticatedIdentity(user) {
+  const identity = await lineageService.loadCurrentIdentity();
+  if (!identity) {
+    ui.showAuthGate("Conta autenticada. Agora vincule sua identidade da linhagem.");
+    if (!lineageService.familyGatePassed()) {
+      ui.setAuthStage("family");
+      ui.setAuthMessage("Confirme a senha da linhagem antes de escolher uma identidade.");
+    } else {
+      selectedLineageIdentityId = null;
+      ui.renderIdentityChoices(listLineageMembers());
+      ui.setAuthStage("identity");
+      ui.setAuthMessage("Selecione seu nome e confirme o segundo nome.");
+    }
+    ui.setAuthBusy(false);
+    return false;
+  }
+
+  ui.setLineageIdentity(identity);
+  ui.setCreatorMode(lineageService.isCreator);
+  voiceIdentityService.setIdentity(identity.id);
+  ui.setAccountUser(user);
+  ui.setAuthMessage(`${identity.firstName} reconhecido. Carregando sua JORDAN...`, "success");
+
+  try {
+    await initialize();
+    ui.hideAuthGate();
+    return true;
+  } catch (error) {
+    console.error("JORDAN boot:", error);
+    if (isStartupCloudError(error)) {
+      cloudState = { ...cloudState, fromCache: true, pending: true, error };
+      ui.setCloudStatus(cloudState);
+      ui.hideAuthGate();
+      ui.toast("Cloud temporariamente indisponível. A JORDAN abriu em contingência e sincronizará quando possível.", "JORDAN CLOUD");
+      return true;
+    }
+    jordanInitialized = false;
+    ui.showAuthGate();
+    ui.setAuthMessage(`Falha ao iniciar a JORDAN: ${error.message}`, "error");
+    return false;
+  }
+}
+
 function bindAuthEvents() {
   ui.elements.authLoginTab?.addEventListener("click", () => setAuthTab("login"));
   ui.elements.authRegisterTab?.addEventListener("click", () => setAuthTab("register"));
@@ -1110,18 +1339,42 @@ function bindAuthEvents() {
     });
   });
 
+  ui.elements.familyGateForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    ui.setAuthBusy(true);
+    ui.setAuthMessage("Validando chave da linhagem...");
+    try {
+      const ok = await lineageService.verifyFamilyPin(ui.elements.familyGatePassword?.value || "");
+      if (!ok) {
+        ui.setAuthMessage("Senha da linhagem incorreta.", "error");
+        return;
+      }
+      if (ui.elements.familyGatePassword) ui.elements.familyGatePassword.value = "";
+      ui.setAuthMessage("Gateway da linhagem liberado.", "success");
+      if (authService.currentUser) {
+        selectedLineageIdentityId = null;
+        ui.renderIdentityChoices(listLineageMembers());
+        ui.setAuthStage("identity");
+      } else {
+        ui.setAuthStage("account");
+        ui.setAuthMode("login");
+      }
+    } finally {
+      ui.setAuthBusy(false);
+    }
+  });
+
   ui.elements.authLoginForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     ui.setAuthBusy(true);
-    ui.setAuthMessage("Autenticando JORDAN ID...");
-
+    ui.setAuthMessage("Autenticando acesso individual...");
     try {
       await authService.loginEmail(
         ui.elements.authLoginEmail.value,
         ui.elements.authLoginPassword.value,
         { remember: ui.elements.authRememberLogin.checked }
       );
-      ui.setAuthMessage("Identidade confirmada. Carregando sua JORDAN...", "success");
+      ui.setAuthMessage("Conta confirmada. Verificando identidade da linhagem...", "success");
     } catch (error) {
       ui.setAuthMessage(friendlyAuthError(error), "error");
     } finally {
@@ -1133,23 +1386,21 @@ function bindAuthEvents() {
     event.preventDefault();
     const password = ui.elements.authRegisterPassword.value;
     const confirm = ui.elements.authRegisterConfirm.value;
-
     if (password !== confirm) {
       ui.setAuthMessage("As duas senhas precisam ser iguais.", "error");
       return;
     }
 
     ui.setAuthBusy(true);
-    ui.setAuthMessage("Criando sua JORDAN ID...");
-
+    ui.setAuthMessage("Criando acesso individual...");
     try {
       await authService.createAccount({
-        name: ui.elements.authRegisterName.value,
+        name: "JORDAN Member",
         email: ui.elements.authRegisterEmail.value,
         password,
         remember: true
       });
-      ui.setAuthMessage("JORDAN ID criada. Preparando sua memória...", "success");
+      ui.setAuthMessage("Conta criada. Agora confirme quem você é na linhagem.", "success");
     } catch (error) {
       ui.setAuthMessage(friendlyAuthError(error), "error");
     } finally {
@@ -1160,16 +1411,41 @@ function bindAuthEvents() {
   ui.elements.authGoogleButton?.addEventListener("click", async () => {
     ui.setAuthBusy(true);
     ui.setAuthMessage("Abrindo autenticação Google...");
-
     try {
-      const result = await authService.loginGoogle({
-        remember: ui.elements.authRememberLogin?.checked !== false
-      });
-      if (result?.redirected) {
-        ui.setAuthMessage("Redirecionando para o Google...");
-      }
+      const result = await authService.loginGoogle({ remember: ui.elements.authRememberLogin?.checked !== false });
+      if (result?.redirected) ui.setAuthMessage("Redirecionando para o Google...");
     } catch (error) {
       ui.setAuthMessage(friendlyAuthError(error), "error");
+      ui.setAuthBusy(false);
+    }
+  });
+
+  ui.elements.identityChoiceGrid?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-identity-id]");
+    if (!button) return;
+    selectedLineageIdentityId = button.dataset.identityId;
+    document.querySelectorAll(".identity-choice").forEach((item) => item.classList.toggle("active", item === button));
+    if (ui.elements.identityConfirmButton) ui.elements.identityConfirmButton.disabled = false;
+    ui.elements.identityConfirmation?.focus();
+  });
+
+  ui.elements.identityConfirmButton?.addEventListener("click", async () => {
+    if (!selectedLineageIdentityId) return;
+    ui.setAuthBusy(true);
+    ui.setAuthMessage("Vinculando identidade à sua conta...");
+    try {
+      const identity = await lineageService.claimIdentity(
+        selectedLineageIdentityId,
+        ui.elements.identityConfirmation?.value || ""
+      );
+      await authService.setDisplayName(identity.firstName).catch(() => {});
+      ui.setLineageIdentity(identity);
+      ui.setAuthMessage(`${identity.firstName} vinculado. Esta identidade agora pertence a esta conta.`, "success");
+      jordanInitialized = false;
+      await presentAuthenticatedIdentity(authService.currentUser);
+    } catch (error) {
+      ui.setAuthMessage(error.message || "Não consegui vincular essa identidade.", "error");
+    } finally {
       ui.setAuthBusy(false);
     }
   });
@@ -1181,7 +1457,6 @@ function bindAuthEvents() {
       ui.elements.authLoginEmail?.focus();
       return;
     }
-
     try {
       await authService.resetPassword(email);
       ui.setAuthMessage("Enviei o link de recuperação para seu e-mail.", "success");
@@ -1192,23 +1467,20 @@ function bindAuthEvents() {
 
   ui.elements.syncNowButton?.addEventListener("click", async () => {
     if (!navigator.onLine) {
-      ui.toast("Sem internet agora. O Firestore vai sincronizar automaticamente quando a conexão voltar.", "JORDAN CLOUD");
+      ui.toast("Sem internet agora. O Firestore sincronizará automaticamente quando a conexão voltar.", "JORDAN CLOUD");
       return;
     }
-
     ui.elements.syncNowButton.disabled = true;
     cloudState = { ...cloudState, pending: true, online: true };
     ui.setCloudStatus(cloudState);
-
     try {
       const synced = await waitForCloudSync(8000);
       if (!synced) {
         cloudState = { ...cloudState, online: navigator.onLine, pending: true, fromCache: true };
         ui.setCloudStatus(cloudState);
-        ui.toast("Ainda não recebi confirmação do Firestore. Mantive tudo no cache e vou tentar novamente automaticamente.", "JORDAN CLOUD");
+        ui.toast("Ainda não recebi confirmação do Firestore. Mantive tudo no cache.", "JORDAN CLOUD");
         return;
       }
-
       cloudState = { online: true, pending: false, fromCache: false, error: null };
       ui.setCloudStatus(cloudState);
       ui.toast("Memória e agenda sincronizadas.", "JORDAN CLOUD");
@@ -1223,15 +1495,17 @@ function bindAuthEvents() {
   });
 
   ui.elements.logoutButton?.addEventListener("click", async () => {
-    const confirmed = window.confirm("Sair da sua JORDAN ID neste dispositivo?");
+    const confirmed = window.confirm("Sair desta identidade JORDAN neste dispositivo?");
     if (!confirmed) return;
-
     try {
       voice.stop?.({ manual: true, clearPending: true });
       voice.cancelSpeech?.({ resumeListening: false });
+      voiceIdentityService.stopMonitoring();
+      telemetry.stop();
       reminders.stop();
       cloudUnsubscribe?.();
       cloudUnsubscribe = null;
+      lineageService.clearFamilyGate();
       await authService.logout();
       window.location.reload();
     } catch (error) {
@@ -1242,7 +1516,9 @@ function bindAuthEvents() {
 
 async function boot() {
   bindAuthEvents();
-  ui.showAuthGate("Verificando sua JORDAN ID...");
+  ui.showAuthGate("Inicializando protocolo da linhagem...");
+  ui.setAuthStage("family");
+  ui.renderIdentityChoices(listLineageMembers());
 
   try {
     await authService.consumeRedirectResult();
@@ -1252,34 +1528,21 @@ async function boot() {
 
   authService.watch(async (user) => {
     if (!user) {
-      ui.showAuthGate("Entre com e-mail ou Google para carregar sua memória compartilhada.");
+      jordanInitialized = false;
+      ui.showAuthGate();
       ui.setAuthBusy(false);
+      if (lineageService.familyGatePassed()) {
+        ui.setAuthStage("account");
+        ui.setAuthMode("login");
+        ui.setAuthMessage("Gateway liberado. Entre com seu acesso individual ou Google.");
+      } else {
+        ui.setAuthStage("family");
+        ui.setAuthMessage("Digite a senha da linhagem para continuar.");
+      }
       return;
     }
 
-    ui.setAccountUser(user);
-    ui.setAuthMessage("JORDAN ID reconhecida. Sincronizando memória...", "success");
-
-    try {
-      await initialize();
-      ui.hideAuthGate();
-    } catch (error) {
-      console.error("JORDAN boot:", error);
-
-      // Firestore indisponível não deve mais bloquear uma conta já autenticada.
-      // Abrimos o CORE em contingência e o SDK continua tentando sincronizar.
-      if (isStartupCloudError(error)) {
-        cloudState = { ...cloudState, fromCache: true, pending: true, error };
-        ui.setCloudStatus(cloudState);
-        ui.hideAuthGate();
-        ui.toast("Cloud temporariamente indisponível. A JORDAN abriu em modo de contingência e tentará sincronizar sozinha.", "JORDAN CLOUD");
-        return;
-      }
-
-      jordanInitialized = false;
-      ui.showAuthGate();
-      ui.setAuthMessage(`Falha ao iniciar a JORDAN: ${error.message}`, "error");
-    }
+    await presentAuthenticatedIdentity(user);
   });
 }
 

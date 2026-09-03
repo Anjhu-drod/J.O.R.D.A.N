@@ -61,7 +61,8 @@ export class ReminderService {
     let changed = false;
 
     for (const offset of offsets) {
-      const key = `offset:${offset}`;
+      const occurrenceKey = event.virtualOccurrence ? event.id : (event.recurrenceParentId || event.id);
+      const key = `${occurrenceKey}:offset:${offset}`;
       if (delivered.has(key)) continue;
 
       const fireAt = new Date(start.getTime() - offset * 60000);

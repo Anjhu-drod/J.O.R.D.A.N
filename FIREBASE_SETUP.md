@@ -1,73 +1,90 @@
-# JORDAN V0.7 — Firebase Setup
+# JORDAN V0.8 — Firebase / Lineage Setup
 
-A V0.7 usa **Firebase Authentication + Cloud Firestore**.
+A V0.8 usa Firebase Authentication + Cloud Firestore no projeto `jordan-a8722`.
 
-- Login: e-mail/senha ou Google.
-- Sessão: fica salva no dispositivo por padrão.
-- Dados compartilhados: memórias, agenda e configurações.
-- Offline: Firestore Persistent Local Cache.
-- Reconexão: o SDK sincroniza automaticamente as escritas pendentes.
-- JORDAN Music continua local porque os arquivos de áudio podem ser grandes.
+## 1. Authentication
 
-## 1. Ativar Cloud Firestore
+Firebase Console → Authentication → Sign-in method.
 
-Firebase Console → projeto `jordan-a8722` → Build → Firestore Database → Create database.
+Mantenha ativos:
 
-Use Standard edition. Para uso no Brasil, escolha uma região próxima quando disponível.
+- Email/Password
+- Google
 
-## 2. Publicar as regras
-
-Abra Firestore Database → Rules e cole o conteúdo do arquivo `firestore.rules` deste patch.
-
-As regras garantem que um usuário autenticado só consiga ler/escrever em `users/{seuUid}/...`.
-
-## 3. Ativar Email/Password
-
-Firebase Console → Authentication → Sign-in method → Email/Password → Enable → Save.
-
-## 4. Ativar Google
-
-Firebase Console → Authentication → Sign-in method → Google → Enable.
-
-Escolha o e-mail de suporte e salve.
-
-## 5. Autorizar o GitHub Pages
-
-Firebase Console → Authentication → Settings → Authorized domains.
-
-Adicione o domínio do seu GitHub Pages, por exemplo:
+Em Authentication → Settings → Authorized domains, mantenha também o domínio do GitHub Pages, por exemplo:
 
 `SEUUSUARIO.github.io`
 
-Use somente o domínio, sem `https://` e sem o caminho do repositório.
+## 2. Firestore
 
-## 6. Primeiro login
+Firebase Console → Firestore Database.
 
-Abra a JORDAN com internet pelo menos uma vez, faça login e aguarde `CLOUD ONLINE`.
+O banco `(default)` deve estar criado.
 
-Na primeira execução desta versão, a JORDAN procura o banco antigo `JordanDB`. Se encontrar dados da V0.6.1 ou anteriores, ela:
+## 3. Publique as NOVAS Rules da V0.8
 
-1. envia agenda, memórias e configurações para a sua JORDAN ID;
-2. espera as escritas chegarem ao Firestore;
-3. marca a migração daquele dispositivo;
-4. remove o banco antigo `JordanDB`.
+Abra Firestore Database → Rules e substitua o conteúdo pelo arquivo `firestore.rules` deste patch.
 
-O cache offline do Firestore continua existindo separadamente.
+Depois clique em **Publish**.
 
-## 7. Teste de sincronização
+Isso é obrigatório porque a V0.8 adiciona:
 
-1. Entre no PC.
-2. Diga: `Eu gosto de Berserk`.
-3. Espere `CLOUD ONLINE`.
-4. Entre com a mesma conta no celular.
-5. Abra MEM: a memória deve aparecer.
-6. Desligue a internet no celular.
-7. Crie outra memória ou compromisso.
-8. O HUD deve indicar `OFFLINE MODE` ou `OFFLINE · PENDING`.
-9. Ligue a internet e aguarde a sincronização automática.
+- `lineageBindings/{identityId}`
+- vínculo único entre uma identidade da linhagem e um Firebase UID
+- leitura administrativa do creator
+- dados de cada usuário em `users/{uid}/...`
 
-## Observações
+### Modelo de acesso
 
-O objeto `firebaseConfig` do app Web identifica o projeto Firebase e fica no frontend. A segurança dos dados depende de Authentication + Firestore Security Rules.
+- membro normal: lê/escreve apenas o próprio `users/{uid}/...`
+- creator Jhuan: pode ler os perfis vinculados para o console administrativo
+- creator não escreve diretamente no banco privado de outro membro através dessa regra
+- qualquer usuário não autenticado: sem acesso ao Firestore privado
 
-O `databaseURL` do Realtime Database permanece no config porque veio do projeto Firebase, mas a V0.7 não usa Realtime Database como memória. A memória compartilhada usa Cloud Firestore.
+## 4. Primeiro acesso da V0.8
+
+Quando ainda não existe sessão vinculada:
+
+1. Family Gate.
+2. E-mail/senha ou Google.
+3. No primeiro provisionamento da linhagem, **Jhuan deve vincular a identidade dele primeiro**.
+4. Depois, cada membro escolhe uma das identidades disponíveis.
+5. Informar o segundo nome correspondente.
+6. A JORDAN cria o binding daquela identidade.
+
+Depois disso a sessão Firebase permanece salva normalmente. Ao reabrir o mesmo dispositivo, a JORDAN reconhece a conta e a identidade sem repetir toda a sequência.
+
+Ao usar `SAIR DA CONTA`, a sessão e o Family Gate daquele dispositivo são encerrados.
+
+## 5. Importante sobre o Family Gate
+
+O Family Gate serve para impedir entrada casual na tela de autenticação/claim. Como a JORDAN ainda é um site estático no GitHub Pages, JavaScript e hashes podem ser inspecionados. Portanto ele NÃO substitui Firebase Authentication.
+
+O mesmo vale para o segundo nome de confirmação: é uma confirmação de identidade do fluxo familiar, enquanto a segurança de dados é feita por Firebase Auth + Rules.
+
+Se no futuro você quiser tornar a reivindicação de identidades mais rígida, a evolução recomendada é aprovação do creator por backend/Cloud Function ou uma allowlist de contas previamente aprovada.
+
+## 6. Dados e offline
+
+Memórias, agenda e configurações continuam usando Firestore com cache persistente.
+
+Sem internet:
+
+- JORDAN usa o cache já sincronizado;
+- gravações compatíveis ficam pendentes;
+- quando a rede volta, o Firestore tenta sincronizar.
+
+JORDAN Music e Voice Lock continuam locais por dispositivo. Arquivos de áudio e impressão experimental de voz não são enviados ao Firestore.
+
+## 7. Teste rápido
+
+1. Publique `firestore.rules`.
+2. Atualize os arquivos da V0.8 no GitHub.
+3. Abra a JORDAN com `?v=080` uma vez.
+4. Passe pelo Family Gate.
+5. Entre com Firebase.
+6. Escolha sua identidade e informe o segundo nome de confirmação.
+7. Crie um evento: `Vou viajar na próxima semana na quinta-feira.`
+8. Veja o calendário mensal.
+9. Abra SYS e teste o Voice Lock.
+10. Em outro dispositivo, entre na mesma conta/identidade e confira a sincronização.

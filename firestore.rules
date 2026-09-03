@@ -2,9 +2,65 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function creatorBindingExists() {
+      return exists(/databases/$(database)/documents/lineageBindings/jhuan);
+    }
+
+    function isCreator() {
+      return signedIn()
+        && creatorBindingExists()
+        && get(/databases/$(database)/documents/lineageBindings/jhuan).data.ownerUid == request.auth.uid;
+    }
+
+    function ownProfilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid)/profile/main;
+    }
+
+    function profileHasDifferentIdentity(identityId) {
+      return exists(ownProfilePath())
+        && ('lineageId' in get(ownProfilePath()).data)
+        && get(ownProfilePath()).data.lineageId != identityId;
+    }
+
+    match /lineageBindings/{identityId} {
+      // Um membro autenticado precisa conseguir verificar se o nome escolhido
+      // já foi reivindicado. Listagem completa fica restrita ao creator.
+      allow get: if signedIn();
+      allow list: if isCreator();
+
+      allow create: if signedIn()
+                    && !exists(/databases/$(database)/documents/lineageBindings/$(identityId))
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.identityId == identityId
+                    && identityId in ['alef', 'jhuan', 'kauan', 'poliana', 'laerte']
+                    && !profileHasDifferentIdentity(identityId)
+                    // Jhuan ancora a linhagem; os demais claims só abrem depois.
+                    && (identityId == 'jhuan' || creatorBindingExists());
+
+      // O dono pode atualizar metadados sem transferir a identidade para outro UID.
+      // O creator mantém a função administrativa para recuperação futura.
+      allow update: if signedIn()
+                    && request.resource.data.identityId == resource.data.identityId
+                    && (
+                      (
+                        resource.data.ownerUid == request.auth.uid
+                        && request.resource.data.ownerUid == resource.data.ownerUid
+                      )
+                      || isCreator()
+                    );
+
+      allow delete: if isCreator();
+    }
+
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null
-                         && request.auth.uid == userId;
+      // Cada membro escreve somente na própria área. O creator pode ler para
+      // manutenção/recuperação, mas não recebe escrita cruzada por esta regra.
+      allow read: if signedIn() && (request.auth.uid == userId || isCreator());
+      allow write: if signedIn() && request.auth.uid == userId;
     }
 
     match /{document=**} {

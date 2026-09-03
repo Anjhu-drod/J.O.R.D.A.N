@@ -6,7 +6,9 @@ import {
   resolveDateFromText,
   resolveDurationFromText,
   resolveStandaloneDurationFromText,
-  resolveTimeFromText
+  resolveTimeFromText,
+  resolveRecurrenceFromText,
+  hasExplicitTime
 } from "./dateParser.js";
 
 import { detectEventProfile, getEventProfile } from "./eventProfiles.js";
@@ -28,7 +30,7 @@ import {
 } from "./utils.js";
 
 export class JordanAssistant {
-  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null } = {}) {
+  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null, lineage = null } = {}) {
     this.calendar = calendar;
     this.memory = memory;
     this.stories = stories;
@@ -38,6 +40,7 @@ export class JordanAssistant {
     this.science = science;
     this.appLauncher = appLauncher;
     this.originalSongs = originalSongs;
+    this.lineage = lineage;
     this.speechStyle = "informal";
     this.personality = "extroverted";
 
@@ -91,7 +94,12 @@ export class JordanAssistant {
 
   async execute(rawInput) {
     const raw = String(rawInput || "").trim();
-    const original = correctSpeechTranscript(raw, { animeContext: isLikelyAnimeTopic(raw) });
+    const rawCorrected = correctSpeechTranscript(raw, { animeContext: isLikelyAnimeTopic(raw) });
+    const rawRelationAnswer = this.tryLineageRelationQuestion(this.stripWakeWord(rawCorrected));
+    if (rawRelationAnswer) return rawRelationAnswer;
+
+    const relationExpanded = this.lineage?.expandRelationReferences?.(rawCorrected) || rawCorrected;
+    const original = relationExpanded;
     // V0.5: idioma é uma configuração explícita; não mudamos de idioma por uma frase parecida.
     const language = this.context.responseLanguage || "pt";
 
@@ -191,7 +199,7 @@ export class JordanAssistant {
       return this.greeting(language);
     }
 
-    if (this.isCreateIntent(text)) return this.createEvent(original);
+    if (this.isCreateIntent(text) || this.isNaturalCalendarStatement(original, text)) return this.createEvent(original);
     if (this.isMoveIntent(text)) return this.moveEvent(original);
     if (this.isDeleteIntent(text)) return this.deleteEvent(original);
     if (this.isFreeTimeIntent(text)) return this.freeTime(original);
@@ -220,6 +228,97 @@ export class JordanAssistant {
     };
 
     return this.response(fallbacks[language] ?? fallbacks.pt, { understood: false, casual: true, language });
+  }
+
+  async executeReadOnly(rawInput) {
+    const raw = String(rawInput || "").trim();
+    const rawCorrected = correctSpeechTranscript(raw, { animeContext: isLikelyAnimeTopic(raw) });
+    const original = rawCorrected;
+    const language = this.context.responseLanguage || "pt";
+    const text = this.stripWakeWord(original);
+
+    if (!text) {
+      return this.response("Tô ouvindo. Posso conversar e responder perguntas gerais, mas os comandos ficam reservados à voz autorizada.", {
+        casual: true,
+        language
+      });
+    }
+
+    // Voice Lock: a voz de terceiro nunca passa pelos handlers que podem alterar
+    // calendário, memória, personalidade, mídia, localização, apps ou configurações.
+    // Também não revelamos dados privados do usuário logado.
+    const privatePatterns = /\b(?:minha agenda|meus compromissos|minhas informacoes|minhas informações|minha memoria|minha memória|o que voce sabe sobre mim|oque voce sabe sobre mim|onde eu moro|aonde eu moro|meu telefone|meu numero|meu número|meu email|meu e-mail|meu nome|minha mae|minha mãe|meu pai|meus irmaos|meus irmãos|minhas historias|minhas histórias)\b/i;
+    if (privatePatterns.test(text)) {
+      return this.response("Essa informação pertence ao perfil privado do usuário desta conta. Posso conversar com você, mas não revelo dados pessoais nem a memória dele.", {
+        mood: "serious",
+        language,
+        readOnly: true
+      });
+    }
+
+    const order = parsePortugueseOrder(original);
+    const mutatingOrder = order && !["science"].includes(order.intent);
+    const actionPatterns = /\b(?:marque|marca|agende|agenda|agendar|adicione|adiciona|crie|cria|coloque|coloca|cancele|cancela|apague|apaga|remova|remove|mude|muda|remarque|reagende|abra|abre|acesse|toque|reproduza|pause|pare a musica|pare a música|proxima faixa|próxima faixa|musica anterior|música anterior|ligue|desligue|ative|desative|salve|guarde|lembre|esqueca|esqueça|me leve|mostre o caminho|rota para|como chegar|pesquise|procure|busque|diga|fale|repita|pergunte)\b/i;
+
+    if (mutatingOrder || actionPatterns.test(text)) {
+      return this.response("Posso conversar com terceiros, mas esta voz não pode executar comandos, alterar dados, abrir apps, usar localização ou controlar a JORDAN.", {
+        mood: "serious",
+        language,
+        readOnly: true
+      });
+    }
+
+    const systemAnswer = answerSystemQuestion(text);
+    if (systemAnswer) {
+      return this.response(systemAnswer, { topic: "knowledge", language, readOnly: true });
+    }
+
+    const creatorAnswer = await this.tryCreatorQuestion(text);
+    if (creatorAnswer) return { ...creatorAnswer, readOnly: true };
+
+    const animeAnswer = answerAnimeQuestion(text);
+    if (animeAnswer) {
+      return this.response(animeAnswer.answer, {
+        topic: "anime",
+        mood: "excited",
+        language,
+        readOnly: true
+      });
+    }
+
+    // Física/circuitos são cálculos puros e não mexem em nenhum dado do usuário.
+    const science = this.science?.answer?.(original);
+    if (science) {
+      const details = Array.isArray(science.details) && science.details.length
+        ? ` ${science.details.join(" ")}`
+        : "";
+      return this.response(`${science.answer}${details}`, {
+        topic: "science",
+        language,
+        readOnly: true
+      });
+    }
+
+    const greetingPatterns = /^(?:oi|ola|olá|opa|bom dia|boa tarde|boa noite|e ai|e aí|salve)\b/i;
+    if (greetingPatterns.test(text)) {
+      const response = this.greeting(language);
+      return { ...response, readOnly: true };
+    }
+
+    const casual = await this.tryCasualConversation(original, text);
+    if (casual) return { ...casual, readOnly: true };
+
+    // Perguntas gerais podem consultar a internet, mas sem pesquisas imperativas
+    // ("pesquise X" já foi barrado acima) e sem qualquer contexto privado da conta.
+    if (this.looksLikeInformationRequest(original, text) || isLikelyAnimeTopic(text)) {
+      const internetAnswer = await this.tryInternetAnswer(original, language);
+      if (internetAnswer) return { ...internetAnswer, readOnly: true };
+    }
+
+    return this.response(
+      "Posso conversar normalmente com você e responder perguntas gerais. Para executar comandos ou acessar recursos privados, preciso reconhecer a voz cadastrada nesta conta.",
+      { casual: true, language, readOnly: true }
+    );
   }
 
   response(text, extra = {}) {
@@ -290,6 +389,21 @@ export class JordanAssistant {
 
   isCreateIntent(text) {
     return /\b(marque|marca|agende|agenda|agendar|adicione|adiciona|crie|cria|coloque|coloca|me lembre|me lembra|schedule|add|create|remind me|set an appointment|programa|programar|anade|añade|agrega|recuerdame|recuerdame)\b/.test(text);
+  }
+
+  isNaturalCalendarStatement(original, text) {
+    const hasDate = Boolean(resolveDateFromText(original, new Date()));
+    if (!hasDate) return false;
+
+    // Frases naturais que representam fatos/planos de calendário sem usar
+    // explicitamente "marque" ou "agende".
+    if (/\b(?:vou|vamos|irei|iremos|viajo|viajarei|tenho|terei)\b/.test(text)) return true;
+    if (/\bontem\s+(?:foi|teve|aconteceu)\b/.test(text)) return true;
+    if (/\b(?:aniversario|aniversário)\b/.test(text)) return true;
+    if (/\b(?:semana que vem|proxima semana|próxima semana|semana seguinte|na outra semana|outra semana)\b/.test(text)
+      && /\b(?:consulta|viagem|trabalho|prova|reuniao|reunião|evento|compromisso|festa|aniversario|aniversário)\b/.test(text)) return true;
+
+    return false;
   }
 
   isDeleteIntent(text) {
@@ -1148,6 +1262,27 @@ export class JordanAssistant {
     return null;
   }
 
+  tryLineageRelationQuestion(text) {
+    if (!this.lineage?.currentIdentity) return null;
+
+    if (/\b(quem e minha mae|qual o nome da minha mae)\b/.test(text)) {
+      const name = this.lineage.relationAnswer("mother");
+      return name ? this.response(`Sua mãe é ${name}.`) : this.response("Ainda não tenho sua mãe registrada na árvore da linhagem.");
+    }
+
+    if (/\b(quem e meu pai|qual o nome do meu pai)\b/.test(text)) {
+      const name = this.lineage.relationAnswer("father");
+      return name ? this.response(`Seu pai é ${name}.`) : this.response("Ainda não tenho seu pai registrado na árvore da linhagem.");
+    }
+
+    if (/\b(quem (?:e|sao) meu(?:s)? irmao|quem (?:e|sao) minha(?:s)? irma)\b/.test(text)) {
+      const names = this.lineage.relationAnswer("siblings");
+      return names ? this.response(`Na árvore da JORDAN, seus irmãos registrados são ${names}.`) : this.response("Não tenho irmãos registrados para sua identidade.");
+    }
+
+    return null;
+  }
+
   async createEvent(input) {
     const now = new Date();
     const date = resolveDateFromText(input, now);
@@ -1156,13 +1291,42 @@ export class JordanAssistant {
       return this.response("Qual dia? Por exemplo: 'marque dentista amanhã às 15h'.", { awaitingReply: false });
     }
 
-    const time = resolveTimeFromText(input);
-    if (!time) return this.response(`Beleza, ${describeResolvedDate(date)}. Mas qual horário?`);
-
     const title = extractEventTitle(input);
     const profile = detectEventProfile(`${title} ${input}`);
+    const recurrence = resolveRecurrenceFromText(input);
     const explicitDuration = resolveDurationFromText(input, null);
-    const draft = { title, date: date.toISOString(), profileId: profile.id };
+    const time = resolveTimeFromText(input, null);
+
+    // Sem horário explícito = evento de dia inteiro. Isso deixa frases como
+    // “vou viajar na próxima semana na quinta” naturais e sem perguntas extras.
+    if (!time || !hasExplicitTime(input)) {
+      const startAt = startOfDay(date);
+      const endAt = new Date(startAt.getTime() + 86400000);
+      const event = await this.calendar.create({
+        title,
+        startAt,
+        endAt,
+        source: "conversation",
+        category: profile.id,
+        allDay: true,
+        recurrence
+      });
+      this.context.lastMentionedEventId = event.id;
+      const annual = recurrence?.frequency === "yearly" ? " Vou repetir todo ano." : "";
+      return this.response(`Fechou! Coloquei ${title} em ${describeResolvedDate(startAt)} como evento de dia inteiro.${annual}`, {
+        action: "event-created",
+        event,
+        refreshAgenda: true,
+        mood: "excited"
+      });
+    }
+
+    const draft = {
+      title,
+      date: date.toISOString(),
+      profileId: profile.id,
+      recurrence
+    };
 
     if (time.ambiguousPeriod) {
       this.context.pendingAction = {
@@ -1184,11 +1348,17 @@ export class JordanAssistant {
     const startAt = buildDateTime(new Date(draft.date), time);
     const now = new Date();
 
-    if (startAt < now) {
+    if (startAt < now && !draft.recurrence) {
       return this.response(`Esse horário já passou: ${formatDateTime(startAt)}. Me fala outro horário.`);
     }
 
-    const completeDraft = { title: draft.title, startAt: startAt.toISOString(), profileId: draft.profileId };
+    const completeDraft = {
+      title: draft.title,
+      startAt: startAt.toISOString(),
+      profileId: draft.profileId,
+      recurrence: draft.recurrence || null,
+      allDay: false
+    };
     if (explicitDuration) return this.finalizeCreateEvent(completeDraft, explicitDuration);
 
     const profile = getEventProfile(draft.profileId);
@@ -1215,7 +1385,9 @@ export class JordanAssistant {
       startAt,
       endAt,
       source: "conversation",
-      category: profile.id
+      category: profile.id,
+      allDay: Boolean(draft.allDay),
+      recurrence: draft.recurrence || null
     });
 
     this.context.lastMentionedEventId = event.id;
@@ -1224,7 +1396,8 @@ export class JordanAssistant {
       ? ` Vou te avisar ${preAlerts.map((offset) => `${offset} min`).join(" e ")} antes e também na hora.`
       : " Vou te avisar na hora.";
 
-    let text = `Fechou! Marquei ${draft.title} para ${describeResolvedDate(startAt)} às ${formatTime(startAt)}, por ${humanDuration(durationMinutes)}.${alertText}`;
+    const annual = draft.recurrence?.frequency === "yearly" ? " Esse evento vai se repetir todo ano." : "";
+    let text = `Fechou! Marquei ${draft.title} para ${describeResolvedDate(startAt)} às ${formatTime(startAt)}, por ${humanDuration(durationMinutes)}.${alertText}${annual}`;
     if (conflicts.length) text += ` Só um detalhe: esse horário conflita com ${conflicts[0].title}, às ${formatTime(new Date(conflicts[0].startAt))}.`;
 
     return this.response(text, { action: "event-created", event, refreshAgenda: true, mood: "excited" });
@@ -1252,7 +1425,9 @@ export class JordanAssistant {
 
   formatEventList(events, label) {
     if (!events.length) return this.response(`Você não tem compromissos em ${label}.`);
-    const lines = events.map((event) => `${formatTime(new Date(event.startAt))}–${formatTime(new Date(event.endAt))}: ${event.title}`);
+    const lines = events.map((event) => event.allDay
+      ? `DIA TODO: ${event.title}${event.recurrence?.frequency === "yearly" ? " · anual" : ""}`
+      : `${formatTime(new Date(event.startAt))}–${formatTime(new Date(event.endAt))}: ${event.title}`);
     return this.response(`${label}, você tem ${events.length} ${events.length === 1 ? "compromisso" : "compromissos"}:\n${lines.join("\n")}`, { events });
   }
 
@@ -1277,9 +1452,15 @@ export class JordanAssistant {
     const date = resolveDateFromText(input, now) ?? startOfDay(now);
     const events = await this.calendar.forDay(date);
     if (!events.length) return this.response(`Seu dia tá livre em ${describeResolvedDate(date, now)}!`);
-    const first = events[0];
-    const last = events[events.length - 1];
-    return this.response(`Em ${describeResolvedDate(date, now)}, você tem ${events.length} ${events.length === 1 ? "compromisso" : "compromissos"}. O primeiro é ${first.title} às ${formatTime(new Date(first.startAt))}, e o último termina às ${formatTime(new Date(last.endAt))}.`);
+    const timed = events.filter((event) => !event.allDay);
+    const allDay = events.filter((event) => event.allDay);
+    if (!timed.length) {
+      return this.response(`Em ${describeResolvedDate(date, now)}, você tem ${events.length} evento${events.length === 1 ? "" : "s"} de dia inteiro: ${allDay.map((event) => event.title).join(", ")}.`);
+    }
+    const first = timed[0];
+    const last = timed[timed.length - 1];
+    const prefix = allDay.length ? `${allDay.length} de dia inteiro e ` : "";
+    return this.response(`Em ${describeResolvedDate(date, now)}, você tem ${prefix}${timed.length} com horário. O primeiro é ${first.title} às ${formatTime(new Date(first.startAt))}, e o último termina às ${formatTime(new Date(last.endAt))}.`);
   }
 
   async deleteEvent(input) {
@@ -1309,6 +1490,7 @@ export class JordanAssistant {
     }
 
     const event = candidates[0];
+    if (event.locked) return this.response(`${event.title} é um evento fixo da linhagem e não pode ser removido.`);
     await this.calendar.remove(event.id);
     if (this.context.lastMentionedEventId === event.id) this.context.lastMentionedEventId = null;
     return this.response(`Cancelei ${event.title}, que estava marcado para ${formatDateTime(new Date(event.startAt))}.`, { action: "event-deleted", refreshAgenda: true });
@@ -1333,6 +1515,7 @@ export class JordanAssistant {
     if (candidates.length > 1) return this.response(`Achei ${candidates.length} compromissos parecidos. Me dá um nome mais específico.`);
 
     const event = candidates[0];
+    if (event.locked) return this.response(`${event.title} é um evento fixo da linhagem e não pode ser remarcado.`);
 
     if (newTime.ambiguousPeriod) {
       this.context.pendingAction = {

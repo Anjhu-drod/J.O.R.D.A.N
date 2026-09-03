@@ -1,12 +1,17 @@
-const CACHE_NAME = "jordan-v0.7.2";
+const CACHE_NAME = "jordan-v0.8.0";
 const FIREBASE_CACHE = "jordan-firebase-v12.18.0";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/styles.css?v=0.7.2",
-  "./js/app.js?v=0.7.2",
+  "./css/styles.css?v=0.8.0",
+  "./js/app.js?v=0.8.0",
   "./js/authService.js",
+  "./js/lineageConfig.js",
+  "./js/lineageService.js",
+  "./js/lineageAdminService.js",
+  "./js/systemTelemetryService.js",
+  "./js/voiceIdentityService.js",
   "./js/firebaseConfig.js",
   "./js/firebaseService.js",
   "./js/cloudDataService.js",

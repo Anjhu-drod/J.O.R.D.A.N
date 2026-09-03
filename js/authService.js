@@ -137,6 +137,17 @@ export class AuthService {
     }
   }
 
+
+  async setDisplayName(name) {
+    const user = auth.currentUser;
+    if (!user) return null;
+    const displayName = clean(name);
+    if (!displayName) return user;
+    await updateProfile(user, { displayName });
+    await saveProfile(user, { displayName });
+    return user;
+  }
+
   async resetPassword(email) {
     const normalizedEmail = clean(email);
     if (!normalizedEmail) throw new Error("Digite seu e-mail primeiro.");

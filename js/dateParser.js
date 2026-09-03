@@ -70,13 +70,44 @@ const NUMBER_WORDS = {
   ichi: 1, ni: 2, san: 3, yon: 4, go: 5, roku: 6, nana: 7, hachi: 8, ku: 9, juu: 10
 };
 
+function startOfWeekMonday(date) {
+  const value = startOfDay(date);
+  const mondayOffset = (value.getDay() + 6) % 7;
+  return addDays(value, -mondayOffset);
+}
+
+function weekdayInsideText(text) {
+  const entries = Object.entries(WEEKDAYS).sort((a, b) => b[0].length - a[0].length);
+  for (const [weekdayText, weekday] of entries) {
+    if (new RegExp(`\\b${weekdayText}\\b`).test(text)) return { weekdayText, weekday };
+  }
+  return null;
+}
+
 export function resolveDateFromText(input, now = new Date()) {
   const text = normalizeText(input);
   const base = startOfDay(now);
 
+  if (/\b(ontem|yesterday|ayer)\b/.test(text)) return addDays(base, -1);
   if (/\b(depois de amanha|day after tomorrow|pasado manana)\b/.test(text)) return addDays(base, 2);
   if (/\b(amanha|tomorrow|manana|ashita)\b/.test(text) || /明日/.test(input)) return addDays(base, 1);
   if (/\b(hoje|today|hoy|kyou)\b/.test(text) || /今日/.test(input)) return base;
+
+  const weekdayHit = weekdayInsideText(text);
+  if (weekdayHit) {
+    let weekOffset = null;
+    if (/\b(na outra semana|outra semana|semana depois da proxima|semana depois da próxima)\b/.test(text)) {
+      weekOffset = 2;
+    } else if (/\b(semana que vem|proxima semana|próxima semana|semana seguinte)\b/.test(text)) {
+      weekOffset = 1;
+    }
+
+    if (weekOffset !== null) {
+      const monday = startOfWeekMonday(base);
+      const weekdayFromMonday = (weekdayHit.weekday + 6) % 7;
+      return addDays(monday, weekOffset * 7 + weekdayFromMonday);
+    }
+  }
 
   const numeric = text.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
   if (numeric) {
@@ -296,7 +327,7 @@ export function extractEventTitle(input) {
     /\b(me lembre de|me lembra de|lembre me de|remind me to|remember to|recuerdame|recuerda)\b/g,
     /\b(marque|marca|agende|agenda|agendar|adicione|adiciona|crie|cria|coloque|coloca|schedule|add|create|programa|agrega)\b/g,
     /\b(um|uma)?\s*(compromisso|evento|lembrete)\b/g,
-    /\b(hoje|amanha|depois de amanha|today|tomorrow|day after tomorrow|hoy|manana|pasado manana|ashita|kyou)\b/g,
+    /\b(depois de amanha|na proxima semana|na outra semana|semana que vem|proxima semana|outra semana|ontem|hoje|amanha|today|tomorrow|day after tomorrow|yesterday|hoy|manana|pasado manana|ashita|kyou)\b/g,
     /\b(proxima|proximo)?\s*(segunda feira|segunda|terca feira|terca|quarta feira|quarta|quinta feira|quinta|sexta feira|sexta|sabado|domingo)\b/g,
     /\bdia\s+\d{1,2}(?:\s+de\s+[a-z]+(?:\s+de\s+\d{4})?)?/g,
     /\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/g,
@@ -319,10 +350,25 @@ export function extractEventTitle(input) {
   text = text
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/^(?:eu\s+)?(?:vou|foi|era|e)\s+/g, "")
+    .replace(/^(?:no|na|em)\s+/g, "")
+    .replace(/^(?:eu\s+)?(?:tenho|terei)\s+(?:um|uma)?\s*/g, "")
     .replace(/\b(de|para|pra|no|na|em|por)\b$/g, "")
     .trim();
 
   return capitalize(text || "Compromisso");
+}
+
+export function hasExplicitTime(input) {
+  return Boolean(resolveTimeFromText(input, null));
+}
+
+export function resolveRecurrenceFromText(input) {
+  const text = normalizeText(input);
+  if (/\b(aniversario|aniversário|todo ano|todos os anos|anualmente|cada ano)\b/.test(text)) {
+    return { frequency: "yearly", interval: 1 };
+  }
+  return null;
 }
 
 export function describeResolvedDate(date, now = new Date()) {

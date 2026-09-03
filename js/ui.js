@@ -13,6 +13,9 @@ export class JordanUI {
     this.memory = memory;
     this.currentView = "core";
     this.currentNextEvent = null;
+    this.calendarCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    this.selectedCalendarDate = new Date();
+    this.creatorMode = false;
 
     this.elements = {
       clock: document.querySelector("#clock"),
@@ -38,10 +41,21 @@ export class JordanUI {
       searchInput: document.querySelector("#searchInput"),
       periodFilter: document.querySelector("#periodFilter"),
       newEventButton: document.querySelector("#newEventButton"),
+      calendarMonthLabel: document.querySelector("#calendarMonthLabel"),
+      calendarYearLabel: document.querySelector("#calendarYearLabel"),
+      calendarPrevButton: document.querySelector("#calendarPrevButton"),
+      calendarNextButton: document.querySelector("#calendarNextButton"),
+      calendarTodayButton: document.querySelector("#calendarTodayButton"),
+      monthGrid: document.querySelector("#monthGrid"),
+      selectedDateLabel: document.querySelector("#selectedDateLabel"),
+      selectedDateEvents: document.querySelector("#selectedDateEvents"),
 
       memoryList: document.querySelector("#memoryList"),
       memoryCount: document.querySelector("#memoryCount"),
       memoryCounter: document.querySelector("#memoryCounter"),
+      memoryRailButton: document.querySelector("#memoryRailButton"),
+      lineageMemoryOverview: document.querySelector("#lineageMemoryOverview"),
+      refreshLineageMemoryButton: document.querySelector("#refreshLineageMemoryButton"),
 
       exportButton: document.querySelector("#exportButton"),
       importInput: document.querySelector("#importInput"),
@@ -73,6 +87,15 @@ export class JordanUI {
 
       authGate: document.querySelector("#authGate"),
       authConnectionBadge: document.querySelector("#authConnectionBadge"),
+      authStageTitle: document.querySelector("#authStageTitle"),
+      familyGateStage: document.querySelector("#familyGateStage"),
+      familyGateForm: document.querySelector("#familyGateForm"),
+      familyGatePassword: document.querySelector("#familyGatePassword"),
+      accountAuthStage: document.querySelector("#accountAuthStage"),
+      identitySelectStage: document.querySelector("#identitySelectStage"),
+      identityChoiceGrid: document.querySelector("#identityChoiceGrid"),
+      identityConfirmation: document.querySelector("#identityConfirmation"),
+      identityConfirmButton: document.querySelector("#identityConfirmButton"),
       authLoginTab: document.querySelector("#authLoginTab"),
       authRegisterTab: document.querySelector("#authRegisterTab"),
       authLoginForm: document.querySelector("#authLoginForm"),
@@ -81,7 +104,6 @@ export class JordanUI {
       authLoginPassword: document.querySelector("#authLoginPassword"),
       authRememberLogin: document.querySelector("#authRememberLogin"),
       authForgotPassword: document.querySelector("#authForgotPassword"),
-      authRegisterName: document.querySelector("#authRegisterName"),
       authRegisterEmail: document.querySelector("#authRegisterEmail"),
       authRegisterPassword: document.querySelector("#authRegisterPassword"),
       authRegisterConfirm: document.querySelector("#authRegisterConfirm"),
@@ -96,6 +118,16 @@ export class JordanUI {
       accountSyncBadge: document.querySelector("#accountSyncBadge"),
       cloudSyncStatus: document.querySelector("#cloudSyncStatus"),
       cloudTopChip: document.querySelector("#cloudTopChip"),
+      lineageIdentityStatus: document.querySelector("#lineageIdentityStatus"),
+      lineageRelationSummary: document.querySelector("#lineageRelationSummary"),
+      voiceIdentityStatus: document.querySelector("#voiceIdentityStatus"),
+      voiceIdentityToggle: document.querySelector("#voiceIdentityToggle"),
+      thirdPartyConversationToggle: document.querySelector("#thirdPartyConversationToggle"),
+      enrollVoiceButton: document.querySelector("#enrollVoiceButton"),
+      clearVoiceProfileButton: document.querySelector("#clearVoiceProfileButton"),
+      internetTelemetryLabel: document.querySelector("#internetTelemetryLabel"),
+      memoryTelemetryLabel: document.querySelector("#memoryTelemetryLabel"),
+      executionTelemetryLabel: document.querySelector("#executionTelemetryLabel"),
 
       toastContainer: document.querySelector("#toastContainer"),
 
@@ -137,6 +169,8 @@ export class JordanUI {
       eventDate: document.querySelector("#eventDate"),
       eventTime: document.querySelector("#eventTime"),
       eventDuration: document.querySelector("#eventDuration"),
+      eventAllDay: document.querySelector("#eventAllDay"),
+      eventYearly: document.querySelector("#eventYearly"),
       eventDescription: document.querySelector("#eventDescription"),
       deleteEventButton: document.querySelector("#deleteEventButton"),
       closeDialogButton: document.querySelector("#closeDialogButton"),
@@ -164,6 +198,48 @@ export class JordanUI {
     this.elements.authGate?.classList.add("hidden");
   }
 
+  setAuthStage(stage = "family") {
+    const map = {
+      family: [this.elements.familyGateStage, "FAMILY KEY"],
+      account: [this.elements.accountAuthStage, "INDIVIDUAL ACCESS"],
+      identity: [this.elements.identitySelectStage, "LINEAGE IDENTITY"]
+    };
+    for (const [name, [element]] of Object.entries(map)) {
+      element?.classList.toggle("hidden", name !== stage);
+    }
+    if (this.elements.authStageTitle) this.elements.authStageTitle.textContent = map[stage]?.[1] || "JORDAN ID";
+  }
+
+  renderIdentityChoices(members = [], selectedId = null) {
+    const container = this.elements.identityChoiceGrid;
+    if (!container) return;
+    container.innerHTML = "";
+    for (const member of members) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `identity-choice${member.creator ? " creator" : ""}${selectedId === member.id ? " active" : ""}`;
+      button.dataset.identityId = member.id;
+      button.innerHTML = `<strong>${member.firstName}</strong><small>Identidade ${member.id.toUpperCase()}</small>`;
+      container.appendChild(button);
+    }
+  }
+
+  setLineageIdentity(identity = null) {
+    if (this.elements.lineageIdentityStatus) {
+      this.elements.lineageIdentityStatus.textContent = identity
+        ? `${identity.firstName} · ${identity.role === "creator" ? "CREATOR" : "MEMBER"}`
+        : "Não vinculada";
+    }
+  }
+
+  setCreatorMode(enabled = false) {
+    this.creatorMode = Boolean(enabled);
+    document.querySelectorAll("[data-creator-only]").forEach((element) => {
+      element.classList.toggle("hidden-by-role", !this.creatorMode);
+    });
+    if (!this.creatorMode && this.currentView === "memory") this.openView("core");
+  }
+
   setAuthMode(mode = "login") {
     const register = mode === "register";
     this.elements.authLoginTab?.classList.toggle("active", !register);
@@ -181,6 +257,8 @@ export class JordanUI {
   }
 
   setAuthBusy(active = false) {
+    this.elements.familyGateForm?.querySelectorAll("button,input").forEach((element) => { element.disabled = Boolean(active); });
+    if (this.elements.identityConfirmButton) this.elements.identityConfirmButton.disabled = Boolean(active) || !document.querySelector(".identity-choice.active");
     this.elements.authLoginForm?.querySelectorAll("button,input").forEach((element) => {
       if (element.id === "authRememberLogin") return;
       element.disabled = Boolean(active);
@@ -270,6 +348,10 @@ export class JordanUI {
   }
 
   openView(viewName) {
+    if (viewName === "memory" && !this.creatorMode) {
+      this.toast("A memória continua ativa em segundo plano. A visualização administrativa é exclusiva do criador.", "JORDAN MEMORY");
+      viewName = "core";
+    }
     const view = document.querySelector(`[data-view="${viewName}"]`);
     if (!view) return;
 
@@ -619,6 +701,8 @@ export class JordanUI {
       this.renderToday(),
       this.renderNext(),
       this.renderAgenda(),
+      this.renderMonthGrid(),
+      this.renderSelectedDay(),
       this.renderMemory()
     ]);
   }
@@ -662,8 +746,9 @@ export class JordanUI {
     `;
 
     this.elements.nextEventCard.querySelector(".event-title").textContent = event.title;
-    this.elements.nextEventCard.querySelector(".event-meta").textContent =
-      `${formatLongDate(start)} · ${formatTime(start)} · ${humanDuration(duration)}`;
+    this.elements.nextEventCard.querySelector(".event-meta").textContent = event.allDay
+      ? `${formatLongDate(start)} · DIA INTEIRO${event.recurrence?.frequency === "yearly" ? " · ANUAL" : ""}`
+      : `${formatLongDate(start)} · ${formatTime(start)} · ${humanDuration(duration)}`;
 
     this.updateNextCountdown();
   }
@@ -673,6 +758,104 @@ export class JordanUI {
 
     const start = new Date(this.currentNextEvent.startAt);
     this.elements.nextEventCountdown.textContent = humanCountdown(start).toUpperCase();
+  }
+
+  moveCalendarMonth(offset = 0) {
+    this.calendarCursor = new Date(this.calendarCursor.getFullYear(), this.calendarCursor.getMonth() + offset, 1);
+    return this.renderMonthGrid();
+  }
+
+  goCalendarToday() {
+    const today = new Date();
+    this.calendarCursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    this.selectedCalendarDate = today;
+    return Promise.all([this.renderMonthGrid(), this.renderSelectedDay()]);
+  }
+
+  async renderMonthGrid() {
+    const container = this.elements.monthGrid;
+    if (!container) return;
+
+    const year = this.calendarCursor.getFullYear();
+    const month = this.calendarCursor.getMonth();
+    const monthStart = new Date(year, month, 1);
+    const nextMonth = new Date(year, month + 1, 1);
+    const mondayOffset = (monthStart.getDay() + 6) % 7;
+    const gridStart = new Date(year, month, 1 - mondayOffset);
+    const gridEnd = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + 42);
+    const events = await this.calendar.between(gridStart, gridEnd);
+    const grouped = new Map();
+
+    for (const event of events) {
+      const d = new Date(event.startAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(event);
+    }
+
+    if (this.elements.calendarMonthLabel) {
+      this.elements.calendarMonthLabel.textContent = new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(monthStart);
+    }
+    if (this.elements.calendarYearLabel) this.elements.calendarYearLabel.textContent = String(year);
+
+    const today = new Date();
+    container.innerHTML = "";
+    const weekdayMini = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
+
+    for (let index = 0; index < 42; index++) {
+      const date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index);
+      const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      const dayEvents = grouped.get(key) || [];
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "month-day";
+      if (date.getMonth() !== month) button.classList.add("other-month");
+      if (date.toDateString() === today.toDateString()) button.classList.add("today");
+      if (date.toDateString() === this.selectedCalendarDate.toDateString()) button.classList.add("selected");
+      button.innerHTML = `<span class="day-number">${date.getDate()}</span><span class="day-week-mini">${weekdayMini[date.getDay()]}</span>`;
+
+      if (dayEvents.length) {
+        const dots = document.createElement("div");
+        dots.className = "month-event-dots";
+        dayEvents.slice(0, 5).forEach((event) => {
+          const dot = document.createElement("i");
+          if (event.category === "birthday" || event.system) dot.classList.add("birthday");
+          dots.appendChild(dot);
+        });
+        button.appendChild(dots);
+        const title = document.createElement("span");
+        title.className = "day-event-title";
+        title.textContent = dayEvents[0].title + (dayEvents.length > 1 ? ` +${dayEvents.length - 1}` : "");
+        button.appendChild(title);
+      }
+
+      button.addEventListener("click", async () => {
+        this.selectedCalendarDate = date;
+        if (date.getMonth() !== this.calendarCursor.getMonth()) {
+          this.calendarCursor = new Date(date.getFullYear(), date.getMonth(), 1);
+        }
+        await Promise.all([this.renderMonthGrid(), this.renderSelectedDay()]);
+      });
+      container.appendChild(button);
+    }
+  }
+
+  async renderSelectedDay() {
+    const container = this.elements.selectedDateEvents;
+    if (!container) return;
+    const date = this.selectedCalendarDate || new Date();
+    if (this.elements.selectedDateLabel) {
+      this.elements.selectedDateLabel.textContent = new Intl.DateTimeFormat("pt-BR", {
+        weekday: "long", day: "numeric", month: "long", year: "numeric"
+      }).format(date);
+    }
+    const events = await this.calendar.forDay(date);
+    container.innerHTML = "";
+    if (!events.length) {
+      container.innerHTML = '<div class="empty-state">Sem eventos neste dia.</div>';
+      return;
+    }
+    events.forEach((event) => container.appendChild(this.createEventItem(event, true)));
   }
 
   async renderAgenda() {
@@ -714,32 +897,43 @@ export class JordanUI {
     const end = new Date(event.endAt);
 
     const item = document.createElement("article");
-    item.className = "event-item";
+    item.className = `event-item${event.allDay ? " all-day" : ""}${event.system ? " system-event" : ""}`;
     item.dataset.eventId = event.id;
 
     const time = document.createElement("div");
     time.className = "event-time";
-    time.textContent = formatTime(start);
+    time.textContent = event.allDay ? "DIA TODO" : formatTime(start);
 
     const body = document.createElement("div");
 
     const title = document.createElement("div");
     title.className = "event-title";
     title.textContent = event.title;
+    if (event.recurrence?.frequency === "yearly" || event.system) {
+      const badge = document.createElement("span");
+      badge.className = "event-badge";
+      badge.textContent = event.system ? "LINHAGEM · ANUAL" : "ANUAL";
+      title.appendChild(badge);
+    }
 
     const meta = document.createElement("div");
     meta.className = "event-meta";
-    meta.textContent = compact
-      ? `até ${formatTime(end)}`
-      : `${formatDate(start)} · ${formatTime(start)}–${formatTime(end)} · ${event.category || "default"}`;
+    meta.textContent = event.allDay
+      ? (compact ? "Evento de dia inteiro" : `${formatDate(start)} · DIA INTEIRO · ${event.category || "default"}`)
+      : (compact ? `até ${formatTime(end)}` : `${formatDate(start)} · ${formatTime(start)}–${formatTime(end)} · ${event.category || "default"}`);
 
     body.append(title, meta);
 
     const edit = document.createElement("button");
     edit.className = "event-edit";
     edit.type = "button";
-    edit.textContent = "EDITAR";
-    edit.addEventListener("click", () => this.openEventDialog(event));
+    edit.textContent = event.locked ? "FIXO" : "EDITAR";
+    if (event.locked) {
+      edit.disabled = true;
+      edit.classList.add("locked");
+    } else {
+      edit.addEventListener("click", () => this.openEventDialog(event));
+    }
 
     item.append(time, body, edit);
     return item;
@@ -749,8 +943,14 @@ export class JordanUI {
     const memories = await this.memory.all();
     const count = memories.length;
 
-    this.elements.memoryCount.textContent = String(count);
-    this.elements.memoryCounter.textContent = `${count} ${count === 1 ? "ENTRY" : "ENTRIES"}`;
+    if (this.elements.memoryCount) this.elements.memoryCount.textContent = String(count);
+    if (this.elements.memoryCounter) {
+      this.elements.memoryCounter.textContent = this.creatorMode
+        ? `${count} ${count === 1 ? "ENTRY" : "ENTRIES"}`
+        : "MEMORY · ACTIVE";
+    }
+
+    if (!this.creatorMode) return;
 
     if (!count) {
       this.elements.memoryList.innerHTML =
@@ -814,6 +1014,64 @@ export class JordanUI {
     }
   }
 
+  renderLineageMemoryOverview(groups = []) {
+    const container = this.elements.lineageMemoryOverview;
+    if (!container) return;
+    container.innerHTML = "";
+    if (!groups.length) {
+      container.innerHTML = '<div class="empty-state">Nenhuma identidade vinculada ou sem conexão para carregar.</div>';
+      return;
+    }
+    for (const group of groups) {
+      const card = document.createElement("article");
+      card.className = "lineage-memory-person";
+      const memories = group.memories || [];
+      card.innerHTML = `<strong>${group.identity.firstName}</strong><small>${memories.length} memória${memories.length === 1 ? "" : "s"}</small>`;
+      const preview = document.createElement("div");
+      preview.className = "memory-preview";
+      memories.forEach((memory) => {
+        const line = document.createElement("span");
+        line.textContent = `${memory.label || memory.key}: ${String(memory.value ?? "")}`;
+        preview.appendChild(line);
+      });
+      if (!memories.length) preview.innerHTML = '<span>Sem memórias visíveis.</span>';
+      card.appendChild(preview);
+      container.appendChild(card);
+    }
+  }
+
+  updateTelemetry(data = {}) {
+    const root = document.documentElement;
+    const online = Boolean(data.online);
+    document.body.classList.toggle("telemetry-offline", !online);
+    document.body.classList.toggle("telemetry-user-speaking", data.execution === "user-speaking");
+    document.body.classList.toggle("telemetry-jordan-speaking", data.execution === "jordan-speaking");
+
+    const downlink = Math.max(0, Number(data.downlinkMbps || 0));
+    const netSpeed = online ? Math.max(1.2, 11 - Math.min(9.5, downlink)) : 28;
+    const free = Math.max(0.02, Math.min(1, Number(data.storageFreeRatio ?? 1)));
+    const memSpeed = Math.max(2, 18 - free * 15);
+    const execSpeed = data.execution === "jordan-speaking" ? 1.1 : data.execution === "user-speaking" ? 1.8 : 15;
+    root.style.setProperty("--jordan-net-speed", `${netSpeed.toFixed(2)}s`);
+    root.style.setProperty("--jordan-memory-speed", `${memSpeed.toFixed(2)}s`);
+    root.style.setProperty("--jordan-exec-speed", `${execSpeed.toFixed(2)}s`);
+    root.style.setProperty("--jordan-net-glow", online ? String(Math.max(.45, Math.min(1, .45 + downlink / 20))) : ".32");
+    root.style.setProperty("--jordan-memory-glow", String(Math.max(.25, free)));
+
+    if (this.elements.internetTelemetryLabel) {
+      this.elements.internetTelemetryLabel.textContent = online
+        ? `NET · ${downlink.toFixed(1)} Mbps${data.latencyMs ? ` · ${data.latencyMs}ms` : ""}`
+        : "NET · OFFLINE";
+    }
+    if (this.elements.memoryTelemetryLabel) {
+      this.elements.memoryTelemetryLabel.textContent = `CACHE · ${Math.round(free * 100)}% LIVRE`;
+    }
+    if (this.elements.executionTelemetryLabel) {
+      const labels = { idle: "IDLE", "user-speaking": "USER VOICE", "jordan-speaking": "JORDAN VOICE", processing: "PROCESSING" };
+      this.elements.executionTelemetryLabel.textContent = `EXEC · ${labels[data.execution] || String(data.execution || "IDLE").toUpperCase()}`;
+    }
+  }
+
   setNotificationStatus(permission) {
     const map = {
       granted: "Ativos neste navegador",
@@ -870,6 +1128,9 @@ export class JordanUI {
       this.elements.eventDate.value = this.localDateValue(start);
       this.elements.eventTime.value = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
       this.elements.eventDescription.value = event.description || "";
+      if (this.elements.eventAllDay) this.elements.eventAllDay.checked = Boolean(event.allDay);
+      if (this.elements.eventYearly) this.elements.eventYearly.checked = event.recurrence?.frequency === "yearly";
+      this.syncEventModeFields();
 
       const options = [...this.elements.eventDuration.options];
       const closest = options.reduce((best, option) => {
@@ -892,11 +1153,23 @@ export class JordanUI {
       this.elements.eventTime.value = `${String(start.getHours()).padStart(2, "0")}:00`;
       this.elements.eventDuration.value = "60";
       this.elements.eventDescription.value = "";
+      if (this.elements.eventAllDay) this.elements.eventAllDay.checked = false;
+      if (this.elements.eventYearly) this.elements.eventYearly.checked = false;
+      this.syncEventModeFields();
       this.elements.deleteEventButton.classList.add("hidden");
     }
 
     this.elements.eventDialog.showModal();
     setTimeout(() => this.elements.eventTitle.focus(), 30);
+  }
+
+  syncEventModeFields() {
+    const allDay = Boolean(this.elements.eventAllDay?.checked);
+    if (this.elements.eventTime) {
+      this.elements.eventTime.disabled = allDay;
+      this.elements.eventTime.required = !allDay;
+    }
+    if (this.elements.eventDuration) this.elements.eventDuration.disabled = allDay;
   }
 
   closeEventDialog() {
