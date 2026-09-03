@@ -1,4 +1,4 @@
-const CACHE_NAME = "jordan-v0.7.0";
+const CACHE_NAME = "jordan-v0.7.1";
 const FIREBASE_CACHE = "jordan-firebase-v12.18.0";
 
 const APP_SHELL = [

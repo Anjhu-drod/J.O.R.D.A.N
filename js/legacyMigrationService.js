@@ -65,15 +65,18 @@ async function readLegacyDatabase() {
 
         if (names.includes("settings")) {
           const tx = db.transaction("settings", "readonly");
-          const rows = await requestResult(tx.objectStore("settings").getAll());
-          result.settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+          const records = await requestResult(tx.objectStore("settings").getAll());
+          for (const record of records || []) {
+            if (!record?.key) continue;
+            result.settings[record.key] = record.value;
+          }
         }
 
-        db.close();
         resolve(result);
       } catch (error) {
-        db.close();
         reject(error);
+      } finally {
+        db.close();
       }
     };
   });
@@ -91,6 +94,19 @@ function deleteLegacyDatabase() {
 
 export async function migrateLegacyJordanDB() {
   const deviceId = deviceMigrationId();
+
+  // Nunca arriscamos apagar o banco antigo durante uma inicialização offline.
+  // Ele continua como cópia de segurança até o Firestore confirmar que recebeu
+  // a migração deste aparelho.
+  if (!navigator.onLine) {
+    return {
+      migrated: false,
+      deferred: true,
+      reason: "offline",
+      deletedLegacy: false
+    };
+  }
+
   const marker = await getMigrationMarker(deviceId);
   if (marker?.completed) {
     return { migrated: false, reason: "already-migrated", deletedLegacy: false };
@@ -102,7 +118,17 @@ export async function migrateLegacyJordanDB() {
 
   if (!legacy || (total === 0 && settingsCount === 0)) {
     await setMigrationMarker(deviceId, { hadLegacyData: false, itemCount: 0 });
-    await waitForCloudSync();
+    const synced = await waitForCloudSync(7000);
+
+    if (!synced) {
+      return {
+        migrated: false,
+        deferred: true,
+        reason: "sync-pending",
+        deletedLegacy: false
+      };
+    }
+
     await deleteLegacyDatabase();
     return { migrated: false, reason: "empty", deletedLegacy: true };
   }
@@ -116,9 +142,23 @@ export async function migrateLegacyJordanDB() {
     sourceVersion: "<=0.6.1"
   });
 
-  // Só removemos o JordanDB antigo depois que as escritas chegaram ao backend.
-  // O cache offline do Firestore usa outro banco interno e continua ativo.
-  await waitForCloudSync();
+  // Só removemos o JordanDB antigo depois de o backend confirmar TODAS as
+  // escritas pendentes. Se o cliente estiver temporariamente offline, mantemos
+  // o banco antigo e tentamos novamente quando a rede voltar.
+  const synced = await waitForCloudSync(8000);
+  if (!synced) {
+    return {
+      migrated: false,
+      deferred: true,
+      queued: true,
+      reason: "sync-pending",
+      eventCount: legacy.events.length,
+      memoryCount: legacy.memories.length,
+      settingCount: settingsCount,
+      deletedLegacy: false
+    };
+  }
+
   const deletedLegacy = await deleteLegacyDatabase();
 
   return {

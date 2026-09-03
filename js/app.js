@@ -109,6 +109,42 @@ const reminders = new ReminderService(calendar, {
   }
 });
 
+let legacyMigrationRunning = false;
+
+async function attemptLegacyMigration({ notify = false } = {}) {
+  if (legacyMigrationRunning || !authService.currentUser) return null;
+
+  legacyMigrationRunning = true;
+  try {
+    const migration = await migrateLegacyJordanDB();
+
+    if (migration?.migrated) {
+      ui.toast(
+        `Migrei ${migration.memoryCount} memórias e ${migration.eventCount} compromissos antigos para sua JORDAN ID.`,
+        "JORDAN CLOUD"
+      );
+    } else if (migration?.deferred && notify) {
+      ui.toast(
+        "A memória antiga está segura neste aparelho. Vou concluir a migração assim que o Firestore confirmar a conexão.",
+        "JORDAN CLOUD"
+      );
+    }
+
+    return migration;
+  } catch (error) {
+    console.warn("JORDAN legacy migration:", error);
+    if (notify) {
+      ui.toast(
+        "Não consegui confirmar a migração agora. Mantive sua memória antiga intacta e tentarei novamente depois.",
+        "JORDAN CLOUD"
+      );
+    }
+    return { migrated: false, deferred: true, error };
+  } finally {
+    legacyMigrationRunning = false;
+  }
+}
+
 async function initialize() {
   if (jordanInitialized) return;
   jordanInitialized = true;
@@ -124,13 +160,7 @@ async function initialize() {
       ? "CLOUD + OFFLINE CACHE"
       : "CLOUD · CACHE TEMPORÁRIO";
 
-    const migration = await migrateLegacyJordanDB();
-    if (migration.migrated) {
-      ui.toast(
-        `Migrei ${migration.memoryCount} memórias e ${migration.eventCount} compromissos antigos para sua JORDAN ID.`,
-        "JORDAN CLOUD"
-      );
-    }
+    await attemptLegacyMigration();
   } catch (error) {
     console.error("JORDAN Cloud init:", error);
     cloudState = { ...cloudState, error };
@@ -589,12 +619,20 @@ function bindEvents() {
   });
 
   window.addEventListener("online", () => {
-    cloudState = { ...cloudState, online: true };
+    cloudState = { ...cloudState, online: true, error: null };
     ui.setCloudStatus(cloudState);
     ui.setInternetStatus({ enabled: internetEnabled, online: true });
     if (internetEnabled) internet.testConnection().then((test) => {
       ui.setInternetStatus({ enabled: internetEnabled, online: true, tested: test.ok });
     });
+
+    // Se a primeira inicialização aconteceu sem o Firestore disponível,
+    // tentamos concluir a migração antiga sem bloquear a JORDAN.
+    window.setTimeout(() => {
+      attemptLegacyMigration({ notify: false }).catch((error) => {
+        console.warn("JORDAN Cloud migration retry:", error);
+      });
+    }, 1200);
   });
 
   window.addEventListener("offline", () => {
@@ -1096,10 +1134,18 @@ function bindAuthEvents() {
     ui.setCloudStatus(cloudState);
 
     try {
-      await waitForCloudSync();
+      const synced = await waitForCloudSync(8000);
+      if (!synced) {
+        cloudState = { ...cloudState, online: navigator.onLine, pending: true, fromCache: true };
+        ui.setCloudStatus(cloudState);
+        ui.toast("Ainda não recebi confirmação do Firestore. Mantive tudo no cache e vou tentar novamente automaticamente.", "JORDAN CLOUD");
+        return;
+      }
+
       cloudState = { online: true, pending: false, fromCache: false, error: null };
       ui.setCloudStatus(cloudState);
       ui.toast("Memória e agenda sincronizadas.", "JORDAN CLOUD");
+      await attemptLegacyMigration({ notify: false });
     } catch (error) {
       cloudState = { ...cloudState, error };
       ui.setCloudStatus(cloudState);
