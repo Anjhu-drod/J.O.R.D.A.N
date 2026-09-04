@@ -1,6 +1,6 @@
-# JORDAN V0.9 — NEURAL VOICE / MULTI-DEVICE / CINEMATIC CORE
+# JORDAN V0.9.2 — REASONING REPAIR / MESSAGES / VOICE RELIABILITY
 
-Patch incremental sobre a JORDAN V0.8.1.
+Projeto acumulado até a V0.9.2. Para atualização incremental, aplique o patch V0.9.2 sobre a V0.9.1.
 
 ## Destaques
 
@@ -52,3 +52,25 @@ O Service Worker desta versão usa cache `jordan-v0.9.0`.
 - Voice Server aceita tuning compartilhado.
 
 Versão do cache PWA: `jordan-v0.9.1`.
+
+## V0.9.2 — Reasoning Repair / Messages / Voice Reliability
+
+Esta versão corrige o roteamento que fazia perguntas contextuais caírem na Wikipédia.
+
+Principais mudanças:
+
+- Semantic Brain passa a resolver primeiro usuário, JORDAN, memória, contexto e interface antes de consultar internet.
+- Perguntas como “quem sou eu?”, “qual o seu nome?”, “onde eu moro?”, “qual idioma estou falando?” e “como acesso o calendário?” não viram pesquisa externa.
+- Perguntas atuais dependentes de contexto, como “quem é o presidente do país?”, primeiro resolvem o país salvo do usuário.
+- Offline Knowledge continua disponível e agora recebe prioridade antes da internet para perguntas compatíveis.
+- Voice Identity V2 fica conservadora: uma única diferença de microfone não transforma o dono logado em terceiro.
+- JORDAN Spark Neural permanece a voz oficial. A voz do dispositivo não é usada silenciosamente; contingência do dispositivo é opt-in.
+- Nova aba MSG com mensagens individuais e broadcast para toda a linhagem.
+- “Bom dia” gera briefing com agenda do dia e mensagens novas.
+- Pedidos de música usam YouTube por padrão; “na biblioteca” força JORDAN Music. A fonte padrão pode ser alterada em SYS.
+- Recorrências de calendário suportam diariamente, semanalmente, mensalmente e intervalos como “a cada 20 dias”. Se faltar a data inicial, JORDAN pergunta apenas a data de início e preserva o restante do pedido.
+- Cache PWA: `jordan-v0.9.2`.
+
+### Firestore
+
+Publique novamente o `firestore.rules` desta versão. A coleção `lineageMessages` é nova e as mensagens são imutáveis para membros normais; cada usuário autenticado vê as próprias mensagens, broadcasts e mensagens enviadas. O creator mantém administração.

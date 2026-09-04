@@ -39,6 +39,7 @@ import { LanguageLearningService } from "./languageLearningService.js";
 import { SemanticBrainService } from "./semanticBrainService.js";
 import { PresenceModeService } from "./presenceModeService.js";
 import { lineageVoiceConfigService, DEFAULT_SHARED_VOICE_TUNING } from "./lineageVoiceConfigService.js";
+import { MessageService } from "./messageService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -53,6 +54,7 @@ const offlineKnowledge = new OfflineKnowledgeService();
 const languageLearning = new LanguageLearningService(memory);
 const semanticBrain = new SemanticBrainService({ memory, lineage: lineageService, offlineKnowledge, languageLearning });
 const presence = new PresenceModeService({ getSetting, setSetting });
+const messages = new MessageService(lineageService);
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
@@ -63,7 +65,9 @@ const assistant = new JordanAssistant(calendar, memory, stories, {
   lineage: lineageService,
   offlineKnowledge,
   languageLearning,
-  semanticBrain
+  semanticBrain,
+  messages,
+  getMusicDefaultSource: () => getSetting("music.defaultSource", "youtube")
 });
 const ui = new JordanUI(calendar, memory);
 const telemetry = new SystemTelemetryService({ onUpdate: (data) => ui.updateTelemetry(data) });
@@ -86,9 +90,12 @@ let voiceIdentityEnabled = false;
 let allowThirdPartyConversation = true;
 let neuralVoiceEnabled = true;
 let neuralVoiceEndpoint = "http://127.0.0.1:8787";
+let deviceVoiceFallbackEnabled = false;
+let musicDefaultSource = "youtube";
 let sharedVoiceTuning = { ...DEFAULT_SHARED_VOICE_TUNING };
 let voiceConfigUnsubscribe = null;
 let presenceTimer = null;
+let messagePollTimer = null;
 
 const voice = new VoiceService({
   silenceMs: 2000,
@@ -322,6 +329,9 @@ async function initialize() {
   voiceIdentityEnabled = await startupCloudValue("voiceIdentityEnabled", () => getSetting("voiceIdentityEnabled", false), false);
   allowThirdPartyConversation = await startupCloudValue("allowThirdPartyConversation", () => getSetting("allowThirdPartyConversation", true), true);
   neuralVoiceEnabled = await startupCloudValue("neuralVoiceEnabled", () => getSetting("neuralVoiceEnabled", true), true);
+  deviceVoiceFallbackEnabled = await startupCloudValue("deviceVoiceFallbackEnabled", () => getSetting("deviceVoiceFallbackEnabled", false), false);
+  musicDefaultSource = await startupCloudValue("music.defaultSource", () => getSetting("music.defaultSource", "youtube"), "youtube");
+  if (!['youtube','jordan'].includes(musicDefaultSource)) musicDefaultSource = "youtube";
   // O endpoint é específico do aparelho: PC pode usar localhost enquanto o celular
   // aponta para um endpoint HTTPS remoto da mesma voz. Não sincronizamos essa URL.
   neuralVoiceEndpoint = localStorage.getItem("jordan.voice-endpoint-v1") || "http://127.0.0.1:8787";
@@ -340,6 +350,7 @@ async function initialize() {
   });
 
   voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
+  voice.setDeviceVoiceFallback(deviceVoiceFallbackEnabled);
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
   internet.setEnabled(internetEnabled);
@@ -350,6 +361,8 @@ async function initialize() {
   if (ui.elements.voiceIdentityToggle) ui.elements.voiceIdentityToggle.checked = voiceIdentityEnabled;
   if (ui.elements.thirdPartyConversationToggle) ui.elements.thirdPartyConversationToggle.checked = allowThirdPartyConversation;
   if (ui.elements.neuralVoiceToggle) ui.elements.neuralVoiceToggle.checked = neuralVoiceEnabled;
+  if (ui.elements.deviceVoiceFallbackToggle) ui.elements.deviceVoiceFallbackToggle.checked = deviceVoiceFallbackEnabled;
+  if (ui.elements.musicDefaultSource) ui.elements.musicDefaultSource.value = musicDefaultSource;
   if (ui.elements.neuralVoiceEndpoint) ui.elements.neuralVoiceEndpoint.value = neuralVoiceEndpoint;
   voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
   updateVoiceIdentityStatus();
@@ -433,6 +446,16 @@ async function initialize() {
   }
 
   await startupCloudValue("atualização da interface", () => ui.refreshAll(), null);
+  await refreshMessagesView({ markSeen: false });
+  clearInterval(messagePollTimer);
+  messagePollTimer = setInterval(async () => {
+    if (!jordanInitialized || document.visibilityState === "hidden") return;
+    try {
+      const unread = await messages.unreadCount();
+      ui.setMessageUnreadCount?.(unread);
+      if (ui.currentView === "messages") await refreshMessagesView({ markSeen: false });
+    } catch {}
+  }, 15000);
   if (lineageService.isCreator) {
     refreshCreatorMemoryOverview().catch((error) => console.warn("Creator memory overview:", error));
   }
@@ -524,9 +547,13 @@ async function updateVoiceStatus({ force = false } = {}) {
   ui.setNeuralVoiceStatus(health);
 
   if (!health.ok && ui.elements.speechSynthesisStatus) {
-    const selected = voice.chooseJordanVoice?.();
-    const base = selected?.name ? ` · fallback: ${selected.name}` : " · fallback do dispositivo";
-    ui.elements.speechSynthesisStatus.textContent = `JORDAN Spark${base}`;
+    if (deviceVoiceFallbackEnabled) {
+      const selected = voice.chooseJordanVoice?.();
+      const base = selected?.name ? ` · contingência: ${selected.name}` : " · contingência do dispositivo";
+      ui.elements.speechSynthesisStatus.textContent = `Voice Core offline${base}`;
+    } else {
+      ui.elements.speechSynthesisStatus.textContent = "Voice Core offline · resposta em texto";
+    }
   }
 }
 
@@ -571,6 +598,7 @@ function bindEvents() {
     button.addEventListener("click", () => {
       registerInteraction();
       ui.openView(button.dataset.viewTarget);
+      if (button.dataset.viewTarget === "messages") refreshMessagesView({ markSeen: true }).catch(console.warn);
     });
   });
 
@@ -753,6 +781,22 @@ function bindEvents() {
     ui.toast(neuralVoiceEnabled ? "JORDAN Voice Core ativado." : "Voice Core desativado. Vou usar o fallback do dispositivo.", "JORDAN VOICE");
   });
 
+  ui.elements.deviceVoiceFallbackToggle?.addEventListener("change", async (event) => {
+    registerInteraction();
+    deviceVoiceFallbackEnabled = Boolean(event.target.checked);
+    await setSetting("deviceVoiceFallbackEnabled", deviceVoiceFallbackEnabled);
+    voice.setDeviceVoiceFallback(deviceVoiceFallbackEnabled);
+    ui.toast(deviceVoiceFallbackEnabled
+      ? "Contingência do dispositivo ativada. Ela só será usada se a voz neural falhar."
+      : "Contingência desligada. Se o Voice Core cair, a JORDAN responde em texto em vez de trocar de voz.", "JORDAN VOICE");
+  });
+
+  ui.elements.musicDefaultSource?.addEventListener("change", async (event) => {
+    musicDefaultSource = event.target.value === "jordan" ? "jordan" : "youtube";
+    await setSetting("music.defaultSource", musicDefaultSource);
+    ui.toast(musicDefaultSource === "youtube" ? "Pedidos de música vão para o YouTube por padrão." : "Pedidos de música usam a biblioteca JORDAN por padrão.", "JORDAN MUSIC");
+  });
+
   ui.elements.saveVoiceEndpointButton?.addEventListener("click", async () => {
     registerInteraction();
     const value = ui.elements.neuralVoiceEndpoint?.value?.trim() || "http://127.0.0.1:8787";
@@ -795,6 +839,32 @@ function bindEvents() {
       professional: "Jordan, seja profissional"
     };
     await handleCommand(map[event.target.value] ?? map.extroverted);
+  });
+
+  ui.elements.messageSendButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const recipient = ui.elements.messageRecipient?.value || "";
+    const text = ui.elements.messageInput?.value?.trim() || "";
+    if (!recipient || !text) return;
+    try {
+      await messages.send(recipient, text);
+      ui.elements.messageInput.value = "";
+      ui.toast("Mensagem enviada.", "JORDAN MSG");
+      await refreshMessagesView({ markSeen: false });
+    } catch (error) {
+      ui.toast(error.message, "JORDAN MSG");
+    }
+  });
+  ui.elements.messageInput?.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      ui.elements.messageSendButton?.click();
+    }
+  });
+  ui.elements.messageRefreshButton?.addEventListener("click", () => refreshMessagesView({ markSeen: true }));
+  ui.elements.messageMarkReadButton?.addEventListener("click", async () => {
+    await messages.markSeen();
+    await refreshMessagesView({ markSeen: false });
   });
 
   ui.elements.calendarShortcut.addEventListener("click", () => {
@@ -1030,6 +1100,45 @@ async function toggleVoice() {
   voice.start({ always: false });
 }
 
+function formatBriefEvent(event) {
+  if (event?.allDay) return `${event.title} (dia inteiro)`;
+  const time = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(event.startAt));
+  return `${event.title} às ${time}`;
+}
+
+async function refreshMessagesView({ markSeen = false } = {}) {
+  try {
+    const items = await messages.inbox({ includeSent: true });
+    ui.renderMessages?.(items, lineageService.currentIdentity?.id || null);
+    if (markSeen) await messages.markSeen();
+    const unread = await messages.unreadCount();
+    ui.setMessageUnreadCount?.(unread);
+    ui.setMessageRecipients?.(messages.recipientOptions());
+    return items;
+  } catch (error) {
+    console.warn("JORDAN Messages:", error);
+    ui.renderMessages?.([], lineageService.currentIdentity?.id || null, error.message);
+    return [];
+  }
+}
+
+async function buildMorningBriefing() {
+  const name = lineageService.currentIdentity?.firstName || (await memory.get("profile.name"))?.value || "";
+  const events = await calendar.today().catch(() => []);
+  const messageSummary = await messages.summary({ max: 3, markSeen: false }).catch(() => ({ count: 0, text: "Não consegui conferir as mensagens agora." }));
+  const greeting = `Bom dia${name ? `, ${name}` : ""}!`;
+
+  let agendaText = "Sua agenda está livre hoje.";
+  if (events.length) {
+    const shown = events.slice(0, 4).map(formatBriefEvent);
+    const rest = events.length - shown.length;
+    agendaText = `Hoje você tem ${events.length} ${events.length === 1 ? "compromisso" : "compromissos"}: ${shown.join("; ")}${rest > 0 ? `; e mais ${rest}` : ""}.`;
+  }
+
+  const messagesText = messageSummary.count ? messageSummary.text : "Você não tem mensagens novas.";
+  return `${greeting} ${agendaText} ${messagesText}`;
+}
+
 async function handleCommand(text, { fromVoice = false, speaker = null, recognitionMeta = {} } = {}) {
   registerInteraction();
 
@@ -1039,8 +1148,9 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     if (presence.isWake(text)) {
       await presence.wake();
       ui.setPresenceState?.(presence.state());
-      const msg = "Bom dia! Voltei. Tô ouvindo.";
+      const msg = await buildMorningBriefing();
       ui.addMessage("VOCÊ", text); ui.addMessage("JORDAN", msg);
+      await refreshMessagesView({ markSeen: false });
       if (voiceEnabled) await voice.speak(msg, { volume: assistantVolume, mood: "happy" });
       if (voice.alwaysListening) setTimeout(() => voice.start({ always: true }), 150);
       return;
@@ -1055,6 +1165,15 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
       return;
     }
     ui.setStatus("SLEEP MODE · aguardando ‘Bom dia’ ou ‘Socorro’");
+    return;
+  }
+
+  if (presence.isWake(text)) {
+    const msg = await buildMorningBriefing();
+    ui.addMessage("VOCÊ", text);
+    ui.addMessage("JORDAN", msg);
+    await refreshMessagesView({ markSeen: false });
+    if (voiceEnabled) await voice.speak(msg, { volume: assistantVolume, mood: "happy" });
     return;
   }
 
@@ -1092,7 +1211,7 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     ui.playCinematic(visualKind, visualKind.toUpperCase(), "Comando recebido · analisando intenção", 420);
   }
 
-  if (fromVoice && voiceIdentityEnabled && !speaker?.authorized) {
+  if (fromVoice && voiceIdentityEnabled && speaker?.state === "guest" && !speaker?.authorized) {
     const score = Math.round((speaker?.score || 0) * 100);
 
     if (!allowThirdPartyConversation) {
@@ -1158,7 +1277,10 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
       ui.setStatus("Fala interrompida.");
       return;
     }
-    if (result.action === "open-view" && result.view) ui.openView(result.view);
+    if (result.action === "open-view" && result.view) {
+      ui.openView(result.view);
+      if (result.view === "messages") await refreshMessagesView({ markSeen: true }).catch(console.warn);
+    }
     if (result.action === "open-emergency") ui.openEmergencyPanel(result.priorityNumber || "190");
     if (result.action === "open-tutorial") ui.openTutorialPanel();
     if (result.action === "open-link" && result.url) {
@@ -1177,6 +1299,17 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     }
     if (result.action === "open-music-library") {
       ui.openCompanion("media");
+    }
+    if (result.action === "open-youtube-music") {
+      const query = String(result.query || "").trim();
+      const url = query
+        ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
+        : "https://www.youtube.com/";
+      const popup = window.open(url, "_blank", "noopener,noreferrer");
+      if (!popup) ui.addExternalLink("ABRIR YOUTUBE", url, "JORDAN MUSIC");
+    }
+    if (result.refreshMessages || result.action === "message-sent") {
+      await refreshMessagesView({ markSeen: false }).catch(console.warn);
     }
     if (result.action === "research-results" && result.research) {
       ui.renderResearch(result.research);

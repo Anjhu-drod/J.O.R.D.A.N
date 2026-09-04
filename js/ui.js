@@ -57,6 +57,15 @@ export class JordanUI {
       lineageMemoryOverview: document.querySelector("#lineageMemoryOverview"),
       refreshLineageMemoryButton: document.querySelector("#refreshLineageMemoryButton"),
 
+      messagesRailButton: document.querySelector("#messagesRailButton"),
+      messageUnreadBadge: document.querySelector("#messageUnreadBadge"),
+      messageList: document.querySelector("#messageList"),
+      messageRecipient: document.querySelector("#messageRecipient"),
+      messageInput: document.querySelector("#messageInput"),
+      messageSendButton: document.querySelector("#messageSendButton"),
+      messageRefreshButton: document.querySelector("#messageRefreshButton"),
+      messageMarkReadButton: document.querySelector("#messageMarkReadButton"),
+
       exportButton: document.querySelector("#exportButton"),
       importInput: document.querySelector("#importInput"),
       installButton: document.querySelector("#installButton"),
@@ -68,6 +77,7 @@ export class JordanUI {
       speechSynthesisStatus: document.querySelector("#speechSynthesisStatus"),
       neuralVoiceStatus: document.querySelector("#neuralVoiceStatus"),
       neuralVoiceToggle: document.querySelector("#neuralVoiceToggle"),
+      deviceVoiceFallbackToggle: document.querySelector("#deviceVoiceFallbackToggle"),
       neuralVoiceEndpoint: document.querySelector("#neuralVoiceEndpoint"),
       saveVoiceEndpointButton: document.querySelector("#saveVoiceEndpointButton"),
       checkVoiceCoreButton: document.querySelector("#checkVoiceCoreButton"),
@@ -99,6 +109,7 @@ export class JordanUI {
       locationStatus: document.querySelector("#locationStatus"),
       lexiconStatus: document.querySelector("#lexiconStatus"),
       musicLibraryStatus: document.querySelector("#musicLibraryStatus"),
+      musicDefaultSource: document.querySelector("#musicDefaultSource"),
       musicImportInput: document.querySelector("#musicImportInput"),
       musicClearButton: document.querySelector("#musicClearButton"),
       themeSelect: document.querySelector("#themeSelect"),
@@ -217,6 +228,69 @@ export class JordanUI {
   }
 
 
+  setMessageRecipients(recipients = []) {
+    const select = this.elements.messageRecipient;
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = "";
+    for (const recipient of recipients) {
+      const option = document.createElement("option");
+      option.value = recipient.id;
+      option.textContent = recipient.id === "all" ? "TODOS · LINHAGEM" : recipient.firstName;
+      select.appendChild(option);
+    }
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  }
+
+  setMessageUnreadCount(count = 0) {
+    const value = Math.max(0, Number(count) || 0);
+    if (this.elements.messageUnreadBadge) {
+      this.elements.messageUnreadBadge.textContent = value > 99 ? "99+" : String(value);
+      this.elements.messageUnreadBadge.classList.toggle("hidden", value === 0);
+    }
+    this.elements.messagesRailButton?.classList.toggle("has-unread", value > 0);
+  }
+
+  renderMessages(messages = [], currentIdentityId = null, error = "") {
+    const container = this.elements.messageList;
+    if (!container) return;
+    container.innerHTML = "";
+    if (error) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = `Não consegui carregar as mensagens: ${error}`;
+      container.appendChild(empty);
+      return;
+    }
+    if (!messages.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "Nenhuma mensagem ainda. A linhagem está em silêncio.";
+      container.appendChild(empty);
+      return;
+    }
+
+    for (const message of messages) {
+      const outgoing = message.senderIdentityId === currentIdentityId;
+      const card = document.createElement("article");
+      card.className = `lineage-message ${outgoing ? "outgoing" : "incoming"}`;
+
+      const meta = document.createElement("div");
+      meta.className = "lineage-message-meta";
+      const author = document.createElement("strong");
+      author.textContent = outgoing ? `VOCÊ → ${message.recipientName || message.recipientId || "?"}` : `${message.senderName || "LINHAGEM"}${message.recipientId === "all" ? " → TODOS" : ""}`;
+      const time = document.createElement("time");
+      const ms = Number(message.createdAtMs || message.createdAt?.seconds * 1000 || 0);
+      time.textContent = ms ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(ms)) : "sincronizando";
+      meta.append(author, time);
+
+      const body = document.createElement("p");
+      body.textContent = message.text || "";
+      card.append(meta, body);
+      container.appendChild(card);
+    }
+  }
+
   setAccountProviders(summary = "FIREBASE AUTH", providerIds = []) {
     if (this.elements.accountProviders) this.elements.accountProviders.textContent = summary || "FIREBASE AUTH";
     const ids = new Set(providerIds || []);
@@ -246,12 +320,12 @@ export class JordanUI {
       if (label) {
         if (!enabled) label.textContent = "VOICE CORE DESATIVADO";
         else if (ok) label.textContent = `ONLINE · ${status.voice || "JORDAN SPARK V1"}`;
-        else if (status.reason === "timeout") label.textContent = "SEM RESPOSTA · FALLBACK LOCAL";
-        else label.textContent = "OFFLINE · FALLBACK DO DISPOSITIVO";
+        else if (status.reason === "timeout") label.textContent = "SEM RESPOSTA · TEXTO ATIVO";
+        else label.textContent = "OFFLINE · TEXTO ATIVO";
       }
     }
     if (this.elements.speechSynthesisStatus) {
-      this.elements.speechSynthesisStatus.textContent = ok ? "JORDAN Spark Neural V1" : "JORDAN Spark · fallback";
+      this.elements.speechSynthesisStatus.textContent = ok ? "JORDAN Spark Neural V1" : "Voice Core offline";
     }
   }
 

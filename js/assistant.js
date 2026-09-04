@@ -30,7 +30,7 @@ import {
 } from "./utils.js";
 
 export class JordanAssistant {
-  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null, lineage = null, offlineKnowledge = null, languageLearning = null, semanticBrain = null } = {}) {
+  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null, lineage = null, offlineKnowledge = null, languageLearning = null, semanticBrain = null, messages = null, getMusicDefaultSource = null } = {}) {
     this.calendar = calendar;
     this.memory = memory;
     this.stories = stories;
@@ -44,6 +44,8 @@ export class JordanAssistant {
     this.offlineKnowledge = offlineKnowledge;
     this.languageLearning = languageLearning;
     this.semanticBrain = semanticBrain;
+    this.messages = messages;
+    this.getMusicDefaultSource = getMusicDefaultSource || (async () => "youtube");
     this.speechStyle = "informal";
     this.personality = "extroverted";
 
@@ -142,10 +144,23 @@ export class JordanAssistant {
       return this.response("", { action: "stop-speaking", speak: "", casual: true });
     }
 
-    const semanticEarly = await this.semanticBrain?.answer?.(original, { allowPrivate: true });
-    if (semanticEarly?.kind === "personal" || semanticEarly?.kind === "learned" || semanticEarly?.kind === "conversation" || semanticEarly?.kind === "capabilities") {
-      return this.response(semanticEarly.text, { topic: semanticEarly.subject || semanticEarly.kind, casual: semanticEarly.kind === "conversation" });
+    const semanticEarly = await this.semanticBrain?.answer?.(original, { allowPrivate: true, language });
+    if (semanticEarly?.kind === "contextual-web" && semanticEarly.webQuery) {
+      const contextual = await this.tryInternetAnswer(semanticEarly.webQuery, language, { contextual: true });
+      if (contextual) return contextual;
+      return this.response("Eu entendi a referência, mas não consegui confirmar essa informação atual agora.", { topic: semanticEarly.subject || "context" });
     }
+    if (semanticEarly?.text && semanticEarly.kind !== "knowledge" && semanticEarly.kind !== "calculation") {
+      return this.response(semanticEarly.text, {
+        topic: semanticEarly.subject || semanticEarly.kind,
+        casual: semanticEarly.kind === "conversation",
+        action: semanticEarly.action,
+        view: semanticEarly.view
+      });
+    }
+
+    const messageResult = await this.tryMessageRequest(original, text);
+    if (messageResult) return messageResult;
 
     const directOrder = await this.tryPortugueseOrder(original);
     if (directOrder) return directOrder;
@@ -203,9 +218,6 @@ export class JordanAssistant {
     const mediaResult = await this.tryMediaRequest(original, text);
     if (mediaResult) return mediaResult;
 
-    const semanticReadOnly = await this.semanticBrain?.answer?.(original, { allowPrivate: false });
-    if (semanticReadOnly?.text) return this.response(semanticReadOnly.text, { topic: semanticReadOnly.subject || semanticReadOnly.kind || "knowledge", language, readOnly: true });
-
     const systemAnswer = answerSystemQuestion(text);
     if (systemAnswer) return this.response(systemAnswer, { topic: "knowledge" });
 
@@ -232,7 +244,7 @@ export class JordanAssistant {
     if (this.isListIntent(text)) return this.listEvents(original);
     if (this.isDaySummaryIntent(text)) return this.daySummary(original);
 
-    const semanticKnowledge = await this.semanticBrain?.answer?.(original, { allowPrivate: true });
+    const semanticKnowledge = await this.semanticBrain?.answer?.(original, { allowPrivate: true, language });
     if (semanticKnowledge?.text) return this.response(semanticKnowledge.text, { topic: semanticKnowledge.subject || semanticKnowledge.kind || "knowledge", casual: false });
 
     const casual = await this.tryCasualConversation(original, text);
@@ -299,6 +311,16 @@ export class JordanAssistant {
         mood: "serious",
         language,
         readOnly: true
+      });
+    }
+
+    const semantic = await this.semanticBrain?.answer?.(original, { allowPrivate: false, language });
+    if (semantic?.text) {
+      return this.response(semantic.text, {
+        topic: semantic.subject || semantic.kind || "conversation",
+        language,
+        readOnly: true,
+        casual: semantic.kind === "conversation"
       });
     }
 
@@ -516,6 +538,56 @@ export class JordanAssistant {
       await this.languageLearning?.teachWord?.(pending.word, meaning);
       this.context.pendingAction = null;
       return this.response(`Entendi. “${pending.word}” significa ${meaning}. Vou guardar isso.`, { refreshMemory: true, casual: true });
+    }
+
+    if (pending.type === "resolve-recurring-start-date") {
+      const date = resolveDateFromText(original, new Date());
+      if (!date) {
+        return this.response(`Só preciso da data inicial de “${pending.draft.title}”. Pode falar “hoje”, “amanhã”, “sexta” ou uma data.`, { awaitingReply: true });
+      }
+
+      this.context.pendingAction = null;
+      const combined = `${pending.draft.originalInput || pending.draft.title} ${original}`;
+      const time = resolveTimeFromText(original, null);
+      const explicitDuration = resolveDurationFromText(original, null);
+
+      // Se a resposta trouxe horário, continua o fluxo normal de duração.
+      if (time && hasExplicitTime(original)) {
+        const draft = {
+          title: pending.draft.title,
+          date: date.toISOString(),
+          profileId: pending.draft.profileId,
+          recurrence: pending.draft.recurrence
+        };
+        if (time.ambiguousPeriod) {
+          this.context.pendingAction = { type: "resolve-create-period", draft, time, explicitDuration };
+          return this.response(`Você quis dizer ${time.rawHour} da manhã ou ${time.rawHour} da noite?`, { awaitingReply: true });
+        }
+        return this.continueCreateWithTime(draft, time, explicitDuration);
+      }
+
+      // Sem horário = recorrência de dia inteiro, coerente com o restante do calendário.
+      const startAt = startOfDay(date);
+      const endAt = new Date(startAt.getTime() + 86400000);
+      const event = await this.calendar.create({
+        title: pending.draft.title,
+        startAt,
+        endAt,
+        source: "conversation",
+        category: pending.draft.profileId,
+        allDay: true,
+        recurrence: pending.draft.recurrence
+      });
+      this.context.lastMentionedEventId = event.id;
+      const rec = pending.draft.recurrence;
+      const repeatText = rec.frequency === "daily"
+        ? (rec.interval === 1 ? "todos os dias" : `a cada ${rec.interval} dias`)
+        : rec.frequency === "weekly"
+          ? (rec.interval === 1 ? "toda semana" : `a cada ${rec.interval} semanas`)
+          : rec.frequency === "monthly"
+            ? (rec.interval === 1 ? "todo mês" : `a cada ${rec.interval} meses`)
+            : "todo ano";
+      return this.response(`Fechou! Começo em ${describeResolvedDate(startAt)} e repito ${pending.draft.title} ${repeatText}.`, { action: "event-created", event, refreshAgenda: true, mood: "excited" });
     }
 
     if (pending.type === "resolve-create-period") {
@@ -793,14 +865,65 @@ export class JordanAssistant {
     }
   }
 
+  async tryMessageRequest(original, text) {
+    if (!this.messages) return null;
+    const normalized = normalizeText(text);
+
+    if (/\b(?:abra|abre|acesse|acessa|mostrar|mostra|ver)\b.*\b(?:mensagens|recados)\b/.test(normalized)) {
+      return this.response("Abrindo as mensagens da linhagem.", { action: "open-view", view: "messages", topic: "messages" });
+    }
+
+    if (/\b(?:quais|quantas|tem|tenho|ler|leia|mostre|mostra)\b.*\b(?:mensagens|recados)\b|\bmensagens novas\b/.test(normalized)) {
+      try {
+        const summary = await this.messages.summary({ max: 4, markSeen: false });
+        return this.response(summary.text, { action: "open-view", view: "messages", topic: "messages" });
+      } catch (error) {
+        return this.response(`Não consegui carregar suas mensagens agora: ${error.message}`, { topic: "messages" });
+      }
+    }
+
+    const raw = String(original || "").replace(/^\s*jordan\s*[,;:!?.-]?\s*/i, "").trim();
+    const patterns = [
+      /^(?:mande|manda|envie|envia)\s+(?:uma\s+)?mensagem\s+(?:para|pro|pra)\s+(.+?)\s+(?:dizendo|falando|avisando)\s+(?:que\s+)?(.+)$/i,
+      /^(?:avise|avisa)\s+(.+?)\s+que\s+(.+)$/i,
+      /^(?:mande|manda|envie|envia)\s+(?:para|pro|pra)\s+(.+?)\s+que\s+(.+)$/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = raw.match(pattern);
+      if (!match) continue;
+      const target = this.messages.resolveRecipient(match[1]);
+      if (!target) return this.response(`Não reconheci “${match[1].trim()}” como uma identidade da linhagem.`, { topic: "messages" });
+      try {
+        const sent = await this.messages.send(target, match[2]);
+        return this.response(`Enviei para ${sent.recipientName}: “${sent.text}”.`, { action: "message-sent", message: sent, refreshMessages: true, topic: "messages" });
+      } catch (error) {
+        return this.response(`Não consegui enviar: ${error.message}`, { topic: "messages" });
+      }
+    }
+    return null;
+  }
+
   async tryMediaRequest(original, text) {
     if (!this.media) return null;
-    const wantsPlay = /(toque|toca|tocar|reproduza|reproduzir|coloque|ponha|bote)/.test(text);
-    const mentionsMedia = /(musica|playlist|faixa|som|audio)/.test(text);
+    const wantsPlay = /\b(toque|toca|tocar|reproduza|reproduzir|coloque|ponha|bote)\b/.test(text);
+    const mentionsMedia = /\b(musica|música|playlist|faixa|som|audio|áudio)\b/.test(text);
     if (!wantsPlay || !mentionsMedia) return null;
 
     const query = this.media.extractMusicQuery(original);
-    return this.prepareMediaPlayback(query, { random: /(qualquer|aleatoria|aleatorio)/.test(text) });
+    const explicitLibrary = /\b(?:biblioteca|jordan music|local|offline|minha biblioteca)\b/.test(text);
+    const explicitYoutube = /\b(?:youtube|you tube)\b/.test(text);
+    const preferred = explicitLibrary ? "jordan" : explicitYoutube ? "youtube" : await this.getMusicDefaultSource();
+
+    if (preferred === "youtube") {
+      const cleanQuery = String(query || "").replace(/\b(?:youtube|biblioteca|jordan music|local|offline)\b/gi, " ").replace(/\s+/g, " ").trim();
+      return this.response(
+        cleanQuery ? `Vou procurar “${cleanQuery}” no YouTube.` : "Vou abrir o YouTube para você escolher uma música.",
+        { action: "open-youtube-music", query: cleanQuery, topic: "media", mood: "excited" }
+      );
+    }
+
+    return this.prepareMediaPlayback(query, { random: /\b(qualquer|aleatoria|aleatório|aleatoria)\b/.test(text) });
   }
 
   async prepareMediaPlayback(query = "", { random = false } = {}) {
@@ -878,7 +1001,17 @@ export class JordanAssistant {
     }
 
     if (order.intent === "play_music") {
-      return this.prepareMediaPlayback(order.value, { random: order.random });
+      const rawText = normalizeText(original);
+      const explicitLibrary = /\b(?:biblioteca|jordan music|local|offline|minha biblioteca)\b/.test(rawText);
+      const explicitYoutube = /\b(?:youtube|you tube)\b/.test(rawText);
+      const preferred = explicitLibrary ? "jordan" : explicitYoutube ? "youtube" : await this.getMusicDefaultSource();
+      if (preferred === "youtube") {
+        const query = String(order.value || "").replace(/\b(?:youtube|biblioteca|jordan music|local|offline)\b/gi, " ").replace(/\s+/g, " ").trim();
+        return this.response(query ? `Vou procurar “${query}” no YouTube.` : "Vou abrir o YouTube para você escolher uma música.", {
+          action: "open-youtube-music", query, topic: "media", mood: "excited"
+        });
+      }
+      return this.prepareMediaPlayback(order.value, { random: Boolean(order.random) });
     }
 
     if (order.intent === "sing") {
@@ -1020,8 +1153,13 @@ export class JordanAssistant {
   }
 
   looksLikeInformationRequest(original, text) {
-    if (/[?？]\s*$/.test(original.trim())) return true;
-    return /\b(quem|o que|oque|qual|quais|por que|porque|como|onde|aonde|quando|who|what|which|why|how|where|when|quien|que|cual|por que|como|donde|cuando|誰|何|なぜ|どう|どこ|いつ)\b/.test(text);
+    const t = normalizeText(text);
+    // Perguntas sobre o próprio usuário, a JORDAN ou a interface nunca são
+    // despachadas cegamente para uma enciclopédia. Primeiro precisam de contexto.
+    if (/\b(?:eu|meu|minha|meus|minhas|voce|você|seu|sua|jordan|desta conta|dessa conta|calendario|calendário|agenda|mensagens|internet que voce|idioma|linguagem)\b/.test(t)) return false;
+    if (/\b(?:como faco|como faço|como acessar|como abrir|como usar)\b/.test(t)) return false;
+    if (/[?？]\s*$/.test(original.trim())) return /\b(?:quem|o que|oque|qual|quais|por que|porque|como|onde|quando)\b/.test(t);
+    return /\b(?:quem e|quem é|o que e|o que é|oque e|qual a diferenca|qual a diferença|por que|porque)\b/.test(t);
   }
 
   cleanInternetQuery(original = "") {
@@ -1032,7 +1170,7 @@ export class JordanAssistant {
       .trim();
   }
 
-  async tryInternetAnswer(original, language = "pt") {
+  async tryInternetAnswer(original, language = "pt", { contextual = false } = {}) {
     if (!this.internet?.enabled) return null;
     if (!this.internet.online) {
       return this.response("Tô sem conexão com a internet agora. Posso tentar responder só com o que tenho localmente.", { topic: "internet", language });
@@ -1046,7 +1184,7 @@ export class JordanAssistant {
       if (!result?.text) return null;
 
       const intros = {
-        pt: `Pesquisei e achei isto sobre ${result.title}: `,
+        pt: contextual ? `Confirmei a referência e encontrei isto sobre ${result.title}: ` : `Pesquisei e achei isto sobre ${result.title}: `,
         en: `I looked it up. Here's what I found about ${result.title}: `,
         es: `Lo busqué. Esto es lo que encontré sobre ${result.title}: `,
         ja: `${result.title}について調べたよ。`
@@ -1327,15 +1465,27 @@ export class JordanAssistant {
 
   async createEvent(input) {
     const now = new Date();
+    const recurrence = resolveRecurrenceFromText(input);
     const date = resolveDateFromText(input, now);
 
     if (!date) {
+      // Recorrências como “cortar o cabelo a cada 20 dias” precisam apenas de
+      // uma data inicial. Em vez de tratar a frase como incompleta/errada,
+      // preservamos toda a intenção e perguntamos somente o dado que falta.
+      if (recurrence) {
+        const title = extractEventTitle(input);
+        const profile = detectEventProfile(`${title} ${input}`);
+        this.context.pendingAction = {
+          type: "resolve-recurring-start-date",
+          draft: { title, profileId: profile.id, recurrence, originalInput: input }
+        };
+        return this.response(`Beleza. A partir de qual dia eu começo a repetir “${title}”? Pode falar “hoje”, “amanhã” ou uma data.`, { awaitingReply: true });
+      }
       return this.response("Qual dia? Por exemplo: 'marque dentista amanhã às 15h'.", { awaitingReply: false });
     }
 
     const title = extractEventTitle(input);
     const profile = detectEventProfile(`${title} ${input}`);
-    const recurrence = resolveRecurrenceFromText(input);
     const explicitDuration = resolveDurationFromText(input, null);
     const time = resolveTimeFromText(input, null);
 

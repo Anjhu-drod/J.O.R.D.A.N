@@ -26,6 +26,15 @@ service cloud.firestore {
         && get(ownProfilePath()).data.lineageId != identityId;
     }
 
+    function ownIdentityClaimExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/userIdentityClaims/$(request.auth.uid));
+    }
+
+    function ownIdentityId() {
+      return get(/databases/$(database)/documents/userIdentityClaims/$(request.auth.uid)).data.identityId;
+    }
+
     match /lineageBindings/{identityId} {
       // Um membro autenticado precisa conseguir verificar se o nome escolhido
       // já foi reivindicado. Listagem completa fica restrita ao creator.
@@ -73,6 +82,33 @@ service cloud.firestore {
     match /lineageConfig/{configId} {
       allow read: if signedIn();
       allow create, update, delete: if isCreator();
+    }
+
+    match /lineageMessages/{messageId} {
+      // Mensagens podem ser lidas pelo destinatário, pelo remetente, por todos
+      // quando forem broadcast, e pelo creator para manutenção da linhagem.
+      allow get, list: if signedIn()
+        && ownIdentityClaimExists()
+        && (
+          resource.data.recipientId == 'all'
+          || resource.data.recipientId == ownIdentityId()
+          || resource.data.senderUid == request.auth.uid
+          || isCreator()
+        );
+
+      allow create: if signedIn()
+        && ownIdentityClaimExists()
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderIdentityId == ownIdentityId()
+        && request.resource.data.recipientId in ['all', 'alef', 'jhuan', 'kauan', 'poliana', 'laerte']
+        && request.resource.data.recipientId != ownIdentityId()
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
+
+      // V0.9.2 trata mensagens como registros imutáveis. Exclusão fica com creator.
+      allow update: if false;
+      allow delete: if isCreator();
     }
 
     match /users/{userId}/{document=**} {

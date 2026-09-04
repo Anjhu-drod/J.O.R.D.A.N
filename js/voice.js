@@ -59,13 +59,14 @@ export class VoiceService {
     this.browserSynthesisSupported =
       "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
     this.neuralVoiceEnabled = true;
+    // V0.9.2: não mascaramos falhas do Voice Core com uma voz diferente do aparelho.
+    // A contingência do dispositivo é opcional e vem desligada por padrão.
+    this.deviceVoiceFallbackEnabled = false;
     this.neuralTts = new JordanTTSService({
       endpoint: DEFAULT_JORDAN_TTS_ENDPOINT,
       enabled: true
     });
-    // Mantemos esta flag para compatibilidade com o restante da JORDAN.
-    // Se o Voice Core cair, speak() tenta automaticamente o sintetizador do navegador.
-    this.synthesisSupported = this.browserSynthesisSupported || this.neuralVoiceEnabled;
+    this.synthesisSupported = this.neuralVoiceEnabled || (this.deviceVoiceFallbackEnabled && this.browserSynthesisSupported);
   }
 
   get recognitionSupported() {
@@ -76,7 +77,12 @@ export class VoiceService {
     this.neuralVoiceEnabled = Boolean(enabled);
     this.neuralTts.setEnabled(this.neuralVoiceEnabled);
     this.neuralTts.setEndpoint(endpoint || DEFAULT_JORDAN_TTS_ENDPOINT);
-    this.synthesisSupported = this.browserSynthesisSupported || this.neuralVoiceEnabled;
+    this.synthesisSupported = this.neuralVoiceEnabled || (this.deviceVoiceFallbackEnabled && this.browserSynthesisSupported);
+  }
+
+  setDeviceVoiceFallback(enabled = false) {
+    this.deviceVoiceFallbackEnabled = Boolean(enabled);
+    this.synthesisSupported = this.neuralVoiceEnabled || (this.deviceVoiceFallbackEnabled && this.browserSynthesisSupported);
   }
 
   async neuralVoiceHealth({ force = false } = {}) {
@@ -443,8 +449,8 @@ export class VoiceService {
       }, 380);
     }
 
-    // V0.9: primeiro tentamos a voz neural própria da JORDAN. O sintetizador
-    // do aparelho só existe como fallback para manter a assistente funcional.
+    // V0.9.2: a voz neural é a identidade oficial. Não trocamos silenciosamente
+    // para uma voz diferente do Windows/iPhone/Android quando o Core cai.
     if (this.neuralVoiceEnabled && !this.isMobileLoopbackVoice()) {
       try {
         const health = await this.neuralTts.health();
@@ -473,10 +479,10 @@ export class VoiceService {
       }
     }
 
-    if (!this.browserSynthesisSupported) {
+    if (!this.deviceVoiceFallbackEnabled || !this.browserSynthesisSupported) {
       this.stopBargeInRecognition();
       this.setSpeakingState(false);
-      this.onStatusChange("Voice Core indisponível.");
+      this.onStatusChange(this.neuralVoiceEnabled ? "JORDAN Voice Core indisponível · resposta em texto." : "Voz desativada.");
       this.currentSpeechText = "";
       if (shouldResume && this.alwaysListening && document.visibilityState === "visible") {
         this.recognition = null;

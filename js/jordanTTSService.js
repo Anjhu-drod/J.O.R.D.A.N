@@ -106,6 +106,7 @@ export class JordanTTSService {
   async speak(text, {
     emotion = "auto",
     volume = 1,
+    tuning = {},
     timeoutMs = 18_000,
     onStart = null,
     onEnd = null
@@ -122,7 +123,7 @@ export class JordanTTSService {
         method: "POST",
         mode: "cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: String(text), emotion, tuning }),
+        body: JSON.stringify({ text: String(text), emotion, tuning: tuning || {} }),
         signal: controller.signal,
         ...(isLoopback(this.endpoint) ? { targetAddressSpace: "loopback" } : {})
       });

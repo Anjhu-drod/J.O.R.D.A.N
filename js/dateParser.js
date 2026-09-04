@@ -336,6 +336,8 @@ export function extractEventTitle(input) {
     /\b\d{1,2}\s*(?:h|horas?)\b/g,
     /\bpor\s+\d+(?:[.,]\d+)?\s*(?:horas?|minutos?)\b/g,
     /\bpor\s+(?:meia|uma|duas|tres)\s+horas?\b/g,
+    /\b(?:a cada|cada)\s+(?:\d+|[a-z ]{1,18})\s+(?:dias?|semanas?|mes(?:es)?|anos?)\b/g,
+    /\b(?:todo dia|todos os dias|diariamente|toda semana|todas as semanas|semanalmente|todo mes|todos os meses|mensalmente|todo ano|todos os anos|anualmente)\b/g,
     /\bda\s+(manha|tarde|noite)\b/g
   ];
 
@@ -351,6 +353,7 @@ export function extractEventTitle(input) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^(?:eu\s+)?(?:vou|foi|era|e)\s+/g, "")
+    .replace(/^(?:para|pra)\s+(?:eu\s+)?/g, "")
     .replace(/^(?:no|na|em)\s+/g, "")
     .replace(/^(?:eu\s+)?(?:tenho|terei)\s+(?:um|uma)?\s*/g, "")
     .replace(/\b(de|para|pra|no|na|em|por)\b$/g, "")
@@ -365,9 +368,37 @@ export function hasExplicitTime(input) {
 
 export function resolveRecurrenceFromText(input) {
   const text = normalizeText(input);
-  if (/\b(aniversario|aniversário|todo ano|todos os anos|anualmente|cada ano)\b/.test(text)) {
+  if (/\b(aniversario|todo ano|todos os anos|anualmente|cada ano)\b/.test(text)) {
     return { frequency: "yearly", interval: 1 };
   }
+
+  const numberFrom = (value = "") => {
+    const clean = normalizeText(value).trim();
+    if (/^\d+$/.test(clean)) return Number(clean);
+    return NUMBER_WORDS[clean] ?? null;
+  };
+
+  let match = text.match(/\b(?:a cada|cada)\s+(\d+|[a-z ]{1,18})\s+dias?\b/);
+  if (match) {
+    const interval = numberFrom(match[1]);
+    if (interval && interval > 0 && interval <= 365) return { frequency: "daily", interval };
+  }
+
+  match = text.match(/\b(?:a cada|cada)\s+(\d+|[a-z ]{1,18})\s+semanas?\b/);
+  if (match) {
+    const interval = numberFrom(match[1]);
+    if (interval && interval > 0 && interval <= 52) return { frequency: "weekly", interval };
+  }
+
+  match = text.match(/\b(?:a cada|cada)\s+(\d+|[a-z ]{1,18})\s+mes(?:es)?\b/);
+  if (match) {
+    const interval = numberFrom(match[1]);
+    if (interval && interval > 0 && interval <= 24) return { frequency: "monthly", interval };
+  }
+
+  if (/\b(?:todo dia|todos os dias|diariamente)\b/.test(text)) return { frequency: "daily", interval: 1 };
+  if (/\b(?:toda semana|todas as semanas|semanalmente)\b/.test(text)) return { frequency: "weekly", interval: 1 };
+  if (/\b(?:todo mes|todos os meses|mensalmente)\b/.test(text)) return { frequency: "monthly", interval: 1 };
   return null;
 }
 

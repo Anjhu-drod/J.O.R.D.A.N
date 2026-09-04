@@ -213,6 +213,14 @@ export class OfflineKnowledgeService {
   answer(raw=""){
     const calc=arithmetic(raw); if(calc) return {text:calc,subject:"Matemática",kind:"calculation"};
     const text=normalizeText(raw);
+    if (/\b(?:juntar|encostar|ligar|unir|conectar)\b.*\b(?:fio|terminal|polo)?\s*(?:positivo|mais)\b.*\b(?:fio|terminal|polo)?\s*(?:negativo|menos)\b|\bcurto[- ]?circuito\b/.test(text)) {
+      return {
+        text: "Se você ligar diretamente o positivo ao negativo com pouca resistência, cria um curto-circuito: a corrente pode subir muito, aquecer fios, danificar a fonte ou a bateria e até causar incêndio. Em um circuito correto, a corrente deve passar por uma carga e pelas proteções adequadas.",
+        subject: "Física",
+        topic: "curto-circuito",
+        kind: "knowledge"
+      };
+    }
     const matches=this.entries.map(e=>{ let score=0; if(text.includes(e.normalized)) score+=100+e.normalized.length; for(const w of e.normalized.split(" ")) if(w.length>3&&text.includes(w)) score+=3; return {e,score}; }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
     if(matches[0]?.score>=8) return {text:matches[0].e.answer,subject:matches[0].e.subject,topic:matches[0].e.topic,kind:"knowledge"};
     return null;

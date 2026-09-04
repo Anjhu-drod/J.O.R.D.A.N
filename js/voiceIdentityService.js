@@ -1,4 +1,5 @@
-const PROFILE_PREFIX = "jordan.voiceprint.v1.";
+const PROFILE_PREFIX = "jordan.voiceprint.v2.";
+const FEATURE_VERSION = 2;
 
 function averageVectors(vectors = []) {
   if (!vectors.length) return null;
@@ -17,13 +18,9 @@ function normalizeVector(vector = []) {
 
 function cosine(a = [], b = []) {
   if (!a.length || a.length !== b.length) return 0;
-  let dot = 0;
-  let aa = 0;
-  let bb = 0;
+  let dot = 0, aa = 0, bb = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    aa += a[i] * a[i];
-    bb += b[i] * b[i];
+    dot += a[i] * b[i]; aa += a[i] * a[i]; bb += b[i] * b[i];
   }
   return dot / ((Math.sqrt(aa) * Math.sqrt(bb)) || 1);
 }
@@ -39,70 +36,62 @@ export class VoiceIdentityService {
     this.frequencyData = null;
     this.frames = [];
     this.timer = null;
+    this.mismatchStreak = 0;
+    this.lastMismatchAt = 0;
   }
 
-  setIdentity(identityId) {
-    this.identityId = identityId || null;
-  }
-
-  profileKey() {
-    return `${PROFILE_PREFIX}${this.identityId || "unknown"}`;
-  }
-
-  hasProfile() {
-    return Boolean(this.identityId && localStorage.getItem(this.profileKey()));
-  }
+  setIdentity(identityId) { this.identityId = identityId || null; }
+  profileKey() { return `${PROFILE_PREFIX}${this.identityId || "unknown"}`; }
+  hasProfile() { return Boolean(this.getProfile()); }
 
   getProfile() {
     if (!this.identityId) return null;
     try {
-      return JSON.parse(localStorage.getItem(this.profileKey()) || "null");
-    } catch {
-      return null;
-    }
+      const profile = JSON.parse(localStorage.getItem(this.profileKey()) || "null");
+      if (!profile?.vector || Number(profile.version || 0) !== FEATURE_VERSION) return null;
+      return profile;
+    } catch { return null; }
   }
 
   exportProfile() {
     const profile = this.getProfile();
     if (!profile?.vector) return null;
-    return { identityId: profile.identityId, vector: profile.vector.map(Number), createdAt: profile.createdAt, samples: profile.samples, version: profile.version || 1 };
+    return { identityId: profile.identityId, vector: profile.vector.map(Number), createdAt: profile.createdAt, samples: profile.samples, version: FEATURE_VERSION };
   }
 
   importProfile(profile) {
     if (!this.identityId || !profile?.vector || !Array.isArray(profile.vector)) return false;
-    const clean = { identityId: this.identityId, vector: profile.vector.map(Number), createdAt: profile.createdAt || new Date().toISOString(), samples: Number(profile.samples || 0), version: Number(profile.version || 1) };
+    if (Number(profile.version || 0) !== FEATURE_VERSION) return false;
+    const clean = { identityId: this.identityId, vector: profile.vector.map(Number), createdAt: profile.createdAt || new Date().toISOString(), samples: Number(profile.samples || 0), version: FEATURE_VERSION };
     localStorage.setItem(this.profileKey(), JSON.stringify(clean));
     return true;
   }
 
-  clearProfile() {
-    if (this.identityId) localStorage.removeItem(this.profileKey());
-  }
+  clearProfile() { if (this.identityId) localStorage.removeItem(this.profileKey()); }
 
   setPolicy({ enabled = this.enabled, allowThirdPartyConversation = this.allowThirdPartyConversation } = {}) {
     this.enabled = Boolean(enabled);
     this.allowThirdPartyConversation = Boolean(allowThirdPartyConversation);
-    if (this.enabled) this.startMonitoring().catch(() => {});
-    else this.stopMonitoring();
+    if (this.enabled) this.startMonitoring().catch(() => {}); else this.stopMonitoring();
   }
 
   async startMonitoring() {
     if (this.stream) return true;
     if (!navigator.mediaDevices?.getUserMedia) return false;
 
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      }
-    });
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      // AGC muda o timbre relativo entre aparelhos; desativar quando possível melhora o fingerprint.
+      autoGainControl: false,
+      channelCount: 1
+    }});
 
     this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const source = this.audioContext.createMediaStreamSource(this.stream);
     this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 1024;
-    this.analyser.smoothingTimeConstant = 0.55;
+    this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.42;
     source.connect(this.analyser);
     this.frequencyData = new Float32Array(this.analyser.frequencyBinCount);
 
@@ -110,63 +99,56 @@ export class VoiceIdentityService {
       const frame = this.captureFeatureVector();
       if (!frame) return;
       this.frames.push({ at: Date.now(), vector: frame });
-      const cutoff = Date.now() - 7000;
+      const cutoff = Date.now() - 7500;
       while (this.frames.length && this.frames[0].at < cutoff) this.frames.shift();
-    }, 110);
-
+    }, 95);
     return true;
   }
 
   stopMonitoring() {
-    clearInterval(this.timer);
-    this.timer = null;
+    clearInterval(this.timer); this.timer = null;
     this.stream?.getTracks?.().forEach((track) => track.stop());
-    this.stream = null;
-    this.analyser = null;
-    if (this.audioContext && this.audioContext.state !== "closed") {
-      this.audioContext.close().catch(() => {});
-    }
-    this.audioContext = null;
-    this.frames = [];
+    this.stream = null; this.analyser = null;
+    if (this.audioContext && this.audioContext.state !== "closed") this.audioContext.close().catch(() => {});
+    this.audioContext = null; this.frames = [];
   }
 
   captureFeatureVector() {
-    if (!this.analyser || !this.frequencyData) return null;
+    if (!this.analyser || !this.frequencyData || !this.audioContext) return null;
     this.analyser.getFloatFrequencyData(this.frequencyData);
-
     const bins = this.frequencyData;
-    const bands = 18;
-    const values = [];
-    let totalLinear = 0;
-    let weighted = 0;
+    const nyquist = this.audioContext.sampleRate / 2;
+    const hzPerBin = nyquist / bins.length;
+    const edges = [80,120,180,250,350,500,700,1000,1400,2000,2800,3800,5000,6500];
+    const bands = [];
+    let weighted = 0, total = 0;
 
-    for (let band = 0; band < bands; band++) {
-      const start = Math.floor((band / bands) * bins.length * 0.72);
-      const end = Math.max(start + 1, Math.floor(((band + 1) / bands) * bins.length * 0.72));
-      let sum = 0;
-      let count = 0;
+    for (let e = 0; e < edges.length - 1; e++) {
+      const start = Math.max(1, Math.floor(edges[e] / hzPerBin));
+      const end = Math.min(bins.length, Math.max(start + 1, Math.ceil(edges[e + 1] / hzPerBin)));
+      let sumDb = 0, count = 0;
       for (let i = start; i < end; i++) {
-        const db = Number.isFinite(bins[i]) ? bins[i] : -120;
+        const db = Number.isFinite(bins[i]) ? Math.max(-120, bins[i]) : -120;
+        sumDb += db; count++;
         const linear = Math.pow(10, db / 20);
-        sum += linear;
-        totalLinear += linear;
-        weighted += linear * i;
-        count++;
+        total += linear; weighted += linear * (i * hzPerBin);
       }
-      values.push(count ? sum / count : 0);
+      bands.push(count ? sumDb / count : -120);
     }
 
-    if (totalLinear < 0.01) return null;
-    const centroid = weighted / totalLinear / bins.length;
-    values.push(centroid);
-    values.push(Math.log10(totalLinear + 1e-6));
-    return normalizeVector(values);
+    if (total < 0.004) return null;
+    // A forma relativa do espectro transfere melhor entre microfones do que volume absoluto.
+    const mean = bands.reduce((a,b) => a+b, 0) / bands.length;
+    const shape = bands.map((db) => (db - mean) / 24);
+    const centroid = Math.min(1, (weighted / total) / 5000);
+    const highVsLow = ((bands.slice(7).reduce((a,b)=>a+b,0) / (bands.length-7)) - (bands.slice(0,5).reduce((a,b)=>a+b,0) / 5)) / 40;
+    return normalizeVector([...shape, centroid, highVsLow]);
   }
 
-  recentVector(windowMs = 2400) {
+  recentVector(windowMs = 2600) {
     const cutoff = Date.now() - windowMs;
     const vectors = this.frames.filter((item) => item.at >= cutoff).map((item) => item.vector);
-    return vectors.length >= 4 ? normalizeVector(averageVectors(vectors)) : null;
+    return vectors.length >= 5 ? normalizeVector(averageVectors(vectors)) : null;
   }
 
   async enroll({ durationMs = 8000, onProgress = null } = {}) {
@@ -174,39 +156,50 @@ export class VoiceIdentityService {
     await this.startMonitoring();
     this.frames = [];
     const started = Date.now();
-
     while (Date.now() - started < durationMs) {
-      const elapsed = Date.now() - started;
-      onProgress?.(Math.min(1, elapsed / durationMs));
-      await new Promise((resolve) => setTimeout(resolve, 160));
+      onProgress?.(Math.min(1, (Date.now() - started) / durationMs));
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
-
     const vectors = this.frames.map((item) => item.vector);
-    if (vectors.length < 15) throw new Error("Não consegui captar fala suficiente. Fale durante o cadastro.");
-
-    const profile = {
-      identityId: this.identityId,
-      vector: normalizeVector(averageVectors(vectors)),
-      createdAt: new Date().toISOString(),
-      samples: vectors.length,
-      version: 1
-    };
+    if (vectors.length < 18) throw new Error("Não consegui captar fala suficiente. Fale durante todo o cadastro.");
+    const profile = { identityId: this.identityId, vector: normalizeVector(averageVectors(vectors)), createdAt: new Date().toISOString(), samples: vectors.length, version: FEATURE_VERSION };
     localStorage.setItem(this.profileKey(), JSON.stringify(profile));
     onProgress?.(1);
     return profile;
   }
 
   verifyRecent() {
-    if (!this.enabled) return { required: false, authorized: true, score: 1, reason: "disabled" };
+    if (!this.enabled) return { required:false, authorized:true, score:1, reason:"disabled", state:"session" };
     const profile = this.getProfile();
-    if (!profile?.vector) return { required: true, authorized: false, score: 0, reason: "no-profile" };
+    // A autenticação real é Firebase/JORDAN ID. A voz é um sinal auxiliar, não motivo
+    // para expulsar o próprio dono quando o microfone mudou ou não captou áudio suficiente.
+    if (!profile?.vector) return { required:true, authorized:true, score:0, reason:"no-profile", state:"uncertain" };
     const current = this.recentVector();
-    if (!current) return { required: true, authorized: false, score: 0, reason: "no-audio" };
+    if (!current) return { required:true, authorized:true, score:0, reason:"no-audio", state:"uncertain" };
 
     const score = cosine(profile.vector, current);
-    // Experimental spectral fingerprint. It is a convenience gate, not strong biometric authentication.
-    const authorized = score >= 0.90;
-    return { required: true, authorized, score, reason: authorized ? "match" : "mismatch" };
+    if (score >= 0.72) {
+      this.mismatchStreak = 0;
+      return { required:true, authorized:true, score, reason:"match", state:"owner" };
+    }
+
+    // Microfone, sala, celular e processamento acústico mudam muito o espectro.
+    // Uma leitura isolada nunca deve transformar o dono logado em “terceiro”.
+    // Só classificamos como convidado quando há uma incompatibilidade MUITO forte
+    // repetida em várias verificações próximas.
+    if (score <= 0.28) {
+      const now = Date.now();
+      if (now - this.lastMismatchAt > 9000) this.mismatchStreak = 0;
+      this.lastMismatchAt = now;
+      this.mismatchStreak += 1;
+      if (this.mismatchStreak >= 3) {
+        return { required:true, authorized:false, score, reason:"stable-confident-mismatch", state:"guest" };
+      }
+      return { required:true, authorized:true, score, reason:"mismatch-not-confirmed", state:"uncertain" };
+    }
+
+    this.mismatchStreak = 0;
+    return { required:true, authorized:true, score, reason:"uncertain", state:"uncertain" };
   }
 }
 

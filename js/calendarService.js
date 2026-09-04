@@ -221,18 +221,69 @@ export class CalendarService {
     return result;
   }
 
+  recurringOccurrence(event, startAt) {
+    const originalStart = new Date(event.startAt);
+    const originalEnd = new Date(event.endAt);
+    const duration = Math.max(1, originalEnd.getTime() - originalStart.getTime());
+    const occurrenceStart = new Date(startAt);
+    return {
+      ...event,
+      id: `${event.id}::r${occurrenceStart.getTime()}`,
+      recurrenceParentId: event.id,
+      virtualOccurrence: true,
+      startAt: occurrenceStart.toISOString(),
+      endAt: new Date(occurrenceStart.getTime() + duration).toISOString()
+    };
+  }
+
   expandForRange(event, start, end) {
     const normalized = this.ensureDefaults(event);
-    if (normalized.recurrence?.frequency !== "yearly") {
-      return overlaps(normalized, start, end) ? [normalized] : [];
+    const recurrence = normalized.recurrence;
+    if (!recurrence) return overlaps(normalized, start, end) ? [normalized] : [];
+    if (recurrence.frequency === "yearly") {
+      const result = [];
+      for (let year = start.getFullYear() - 1; year <= end.getFullYear() + 1; year++) {
+        const occurrence = this.yearlyOccurrence(normalized, year);
+        if (overlaps(occurrence, start, end)) result.push(occurrence);
+      }
+      return result;
     }
 
+    const interval = Math.max(1, Number(recurrence.interval || 1));
+    const base = new Date(normalized.startAt);
     const result = [];
-    for (let year = start.getFullYear() - 1; year <= end.getFullYear() + 1; year++) {
-      const occurrence = this.yearlyOccurrence(normalized, year);
-      if (overlaps(occurrence, start, end)) result.push(occurrence);
+
+    if (recurrence.frequency === "daily" || recurrence.frequency === "weekly") {
+      const stepDays = interval * (recurrence.frequency === "weekly" ? 7 : 1);
+      const stepMs = stepDays * DAY_MS;
+      let index = Math.max(0, Math.floor((start.getTime() - base.getTime()) / stepMs) - 1);
+      let occurrenceStart = new Date(base.getTime() + index * stepMs);
+      let guard = 0;
+      while (occurrenceStart < end && guard++ < 5000) {
+        const occurrence = this.recurringOccurrence(normalized, occurrenceStart);
+        if (overlaps(occurrence, start, end)) result.push(occurrence);
+        index += 1;
+        occurrenceStart = new Date(base.getTime() + index * stepMs);
+      }
+      return result;
     }
-    return result;
+
+    if (recurrence.frequency === "monthly") {
+      let index = Math.max(0, ((start.getFullYear() - base.getFullYear()) * 12 + start.getMonth() - base.getMonth()) - interval);
+      index = Math.floor(index / interval) * interval;
+      let guard = 0;
+      while (guard++ < 500) {
+        const occurrenceStart = new Date(base);
+        occurrenceStart.setMonth(base.getMonth() + index);
+        if (occurrenceStart >= end) break;
+        const occurrence = this.recurringOccurrence(normalized, occurrenceStart);
+        if (overlaps(occurrence, start, end)) result.push(occurrence);
+        index += interval;
+      }
+      return result;
+    }
+
+    return overlaps(normalized, start, end) ? [normalized] : [];
   }
 
   async between(start, end) {

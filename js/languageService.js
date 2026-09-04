@@ -19,6 +19,11 @@ const WAKE_ALIASES = [
 ];
 
 const COMMON_CORRECTIONS = [
+  // Erros frequentes do STT quando “Jordan” vem no início de uma ordem.
+  // A correção só dispara quando a palavra é seguida por estrutura típica de comando/pergunta,
+  // evitando transformar todo “Jonathan” ou “joga” citado numa conversa em wake word.
+  { pattern: /^\s*(?:jonathan|jhonatan|jordana|joga)\b(?=\s+(?:quanto|qual|quem|como|onde|quando|o que|oque|marque|marca|agende|abra|abre|toque|toca|mande|manda|avise|avisa|eu|voce|você))/i, value: "Jordan", domain: "general" },
+  { pattern: /\b(?:comprimiti|comprimenti|comprimenta|comprimit[e]?|cumprimenti)\b/gi, value: "cumprimente", domain: "general" },
   { pattern: /\blucy\b/gi, value: "Luffy", domain: "anime" },
   { pattern: /\bluci\b/gi, value: "Luffy", domain: "anime" },
   { pattern: /\blufi\b/gi, value: "Luffy", domain: "anime" },
