@@ -62,6 +62,19 @@ export class VoiceIdentityService {
     }
   }
 
+  exportProfile() {
+    const profile = this.getProfile();
+    if (!profile?.vector) return null;
+    return { identityId: profile.identityId, vector: profile.vector.map(Number), createdAt: profile.createdAt, samples: profile.samples, version: profile.version || 1 };
+  }
+
+  importProfile(profile) {
+    if (!this.identityId || !profile?.vector || !Array.isArray(profile.vector)) return false;
+    const clean = { identityId: this.identityId, vector: profile.vector.map(Number), createdAt: profile.createdAt || new Date().toISOString(), samples: Number(profile.samples || 0), version: Number(profile.version || 1) };
+    localStorage.setItem(this.profileKey(), JSON.stringify(clean));
+    return true;
+  }
+
   clearProfile() {
     if (this.identityId) localStorage.removeItem(this.profileKey());
   }

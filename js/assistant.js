@@ -30,7 +30,7 @@ import {
 } from "./utils.js";
 
 export class JordanAssistant {
-  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null, lineage = null } = {}) {
+  constructor(calendar, memory, stories, { internet = null, location = null, media = null, science = null, appLauncher = null, originalSongs = null, lineage = null, offlineKnowledge = null, languageLearning = null, semanticBrain = null } = {}) {
     this.calendar = calendar;
     this.memory = memory;
     this.stories = stories;
@@ -41,6 +41,9 @@ export class JordanAssistant {
     this.appLauncher = appLauncher;
     this.originalSongs = originalSongs;
     this.lineage = lineage;
+    this.offlineKnowledge = offlineKnowledge;
+    this.languageLearning = languageLearning;
+    this.semanticBrain = semanticBrain;
     this.speechStyle = "informal";
     this.personality = "extroverted";
 
@@ -55,6 +58,7 @@ export class JordanAssistant {
 
   async initialize() {
     await this.memory.ensureCoreMemories?.();
+    await this.languageLearning?.initialize?.();
 
     const styleMemory = await this.memory.get("preference.speechStyle");
     const personalityMemory = await this.memory.get("preference.personality");
@@ -92,7 +96,7 @@ export class JordanAssistant {
     return normalizeText(removeWakeWord(text)).trim();
   }
 
-  async execute(rawInput) {
+  async execute(rawInput, meta = {}) {
     const raw = String(rawInput || "").trim();
     const rawCorrected = correctSpeechTranscript(raw, { animeContext: isLikelyAnimeTopic(raw) });
     const rawRelationAnswer = this.tryLineageRelationQuestion(this.stripWakeWord(rawCorrected));
@@ -123,6 +127,24 @@ export class JordanAssistant {
     if (this.context.pendingAction) {
       const pendingResult = await this.handlePendingAction(original, text);
       if (pendingResult) return pendingResult;
+    }
+
+    const taught = await this.languageLearning?.learnFromTeaching?.(original);
+    if (taught?.kind === "word") {
+      return this.response(`Entendi. Pra você, “${taught.term}” quer dizer ${taught.meaning}. Vou lembrar disso.`, { refreshMemory: true, casual: true });
+    }
+    if (taught?.kind === "rule") {
+      return this.response(`Fechou. Quando você disser “${taught.trigger}”, vou lembrar de ${taught.action}.`, { refreshMemory: true, casual: true });
+    }
+
+    const learnedRule = this.languageLearning?.resolveRule?.(original);
+    if (learnedRule && /^(?:se )?(?:auto )?(?:interrompa|interrompe|interromper)|pare de falar|cala a boca|fique quieta/i.test(normalizeText(learnedRule.action || ""))) {
+      return this.response("", { action: "stop-speaking", speak: "", casual: true });
+    }
+
+    const semanticEarly = await this.semanticBrain?.answer?.(original, { allowPrivate: true });
+    if (semanticEarly?.kind === "personal" || semanticEarly?.kind === "learned" || semanticEarly?.kind === "conversation" || semanticEarly?.kind === "capabilities") {
+      return this.response(semanticEarly.text, { topic: semanticEarly.subject || semanticEarly.kind, casual: semanticEarly.kind === "conversation" });
     }
 
     const directOrder = await this.tryPortugueseOrder(original);
@@ -181,6 +203,9 @@ export class JordanAssistant {
     const mediaResult = await this.tryMediaRequest(original, text);
     if (mediaResult) return mediaResult;
 
+    const semanticReadOnly = await this.semanticBrain?.answer?.(original, { allowPrivate: false });
+    if (semanticReadOnly?.text) return this.response(semanticReadOnly.text, { topic: semanticReadOnly.subject || semanticReadOnly.kind || "knowledge", language, readOnly: true });
+
     const systemAnswer = answerSystemQuestion(text);
     if (systemAnswer) return this.response(systemAnswer, { topic: "knowledge" });
 
@@ -207,6 +232,9 @@ export class JordanAssistant {
     if (this.isListIntent(text)) return this.listEvents(original);
     if (this.isDaySummaryIntent(text)) return this.daySummary(original);
 
+    const semanticKnowledge = await this.semanticBrain?.answer?.(original, { allowPrivate: true });
+    if (semanticKnowledge?.text) return this.response(semanticKnowledge.text, { topic: semanticKnowledge.subject || semanticKnowledge.kind || "knowledge", casual: false });
+
     const casual = await this.tryCasualConversation(original, text);
     if (casual) return casual;
 
@@ -220,8 +248,14 @@ export class JordanAssistant {
       if (internetAnswer) return internetAnswer;
     }
 
+    const unknownWord = this.languageLearning?.findUnknownCandidate?.(original, { source: meta.source || "typed", confidence: meta.confidence ?? 1 });
+    if (unknownWord) {
+      this.context.pendingAction = { type: "define-word", word: unknownWord };
+      return this.response(`Você usou a palavra “${unknownWord}”. Eu não conheço ela com segurança ainda. O que significa?`, { awaitingReply: true, mood: "curious", casual: true });
+    }
+
     const fallbacks = {
-      pt: "Saquei. Ainda não tenho uma ação específica pra isso. Pode continuar me contando ou fazer a pergunta de outro jeito.",
+      pt: "Saquei. Ainda não consegui formar uma resposta boa pra isso. Pode continuar falando comigo; se tiver uma palavra que eu não conheço, você também pode me ensinar o significado.",
       en: "Got it. I don't have a specific action for that yet, but you can keep talking to me or rephrase it.",
       es: "Entiendo. Todavía no tengo una acción específica para eso, pero puedes seguir hablando conmigo o decirlo de otra forma.",
       ja: "わかった。まだそのための専用機能はないけど、続けて話してもいいし、別の言い方でも大丈夫だよ。"
@@ -230,7 +264,7 @@ export class JordanAssistant {
     return this.response(fallbacks[language] ?? fallbacks.pt, { understood: false, casual: true, language });
   }
 
-  async executeReadOnly(rawInput) {
+  async executeReadOnly(rawInput, meta = {}) {
     const raw = String(rawInput || "").trim();
     const rawCorrected = correctSpeechTranscript(raw, { animeContext: isLikelyAnimeTopic(raw) });
     const original = rawCorrected;
@@ -474,6 +508,14 @@ export class JordanAssistant {
     if (/\b(cancela|cancelar|deixa pra la|esquece|para)\b/.test(text) && pending.type !== "capture-story") {
       this.context.pendingAction = null;
       return this.response("Beleza, cancelei essa etapa.");
+    }
+
+    if (pending.type === "define-word") {
+      const meaning = String(original || "").trim();
+      if (!meaning) return this.response(`O que “${pending.word}” significa?`, { awaitingReply: true, mood: "curious" });
+      await this.languageLearning?.teachWord?.(pending.word, meaning);
+      this.context.pendingAction = null;
+      return this.response(`Entendi. “${pending.word}” significa ${meaning}. Vou guardar isso.`, { refreshMemory: true, casual: true });
     }
 
     if (pending.type === "resolve-create-period") {

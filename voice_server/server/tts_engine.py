@@ -67,25 +67,26 @@ class JordanTTSEngine:
         a = min(1.0, abs(amount) * 3.0)
         return audio * (1.0-a) + smooth * a
 
-    def _post(self, audio: np.ndarray, emotion: str, punctuation: str = "") -> np.ndarray:
+    def _post(self, audio: np.ndarray, emotion: str, punctuation: str = "", tuning: dict | None = None) -> np.ndarray:
         p = RECIPE["prosody"][emotion]
+        tuning = tuning or {}
         y = np.asarray(audio, dtype=np.float32)
-        semitones = float(p["pitch_semitones"])
+        semitones = float(p["pitch_semitones"]) + float(tuning.get("pitch", 0.0) or 0.0)
         if abs(semitones) > 0.01 and y.size > 1024:
             y = librosa.effects.pitch_shift(y, sr=SR, n_steps=semitones).astype(np.float32)
 
-        y = self._presence(y, float(p.get("brightness", 0.0)))
-        y *= float(p.get("gain", 1.0))
+        brightness = float(p.get("brightness", 0.0)) + float(tuning.get("brightness", 0.0) or 0.0)
+        y = self._presence(y, max(-0.35, min(0.45, brightness)))
+        y *= float(p.get("gain", 1.0)) * max(0.65, min(1.35, float(tuning.get("energy", 1.0) or 1.0)))
 
-        # interrogação: subida leve no quarto final
+        expressiveness = max(0.55, min(1.50, float(tuning.get("expressiveness", 1.0) or 1.0)))
         if "?" in punctuation and len(y) > SR // 2:
-            cut = int(len(y) * 0.74)
-            tail = librosa.effects.pitch_shift(y[cut:], sr=SR, n_steps=0.7).astype(np.float32)
+            cut = int(len(y) * max(0.68, min(0.80, 0.76 - 0.02 * expressiveness)))
+            tail = librosa.effects.pitch_shift(y[cut:], sr=SR, n_steps=0.70 * expressiveness).astype(np.float32)
             y = np.concatenate([y[:cut], tail])
 
-        # exclamação: energia discreta sem clip agressivo
         if "!" in punctuation:
-            y *= 1.035
+            y *= 1.0 + (0.035 * expressiveness)
 
         # whisper: ar sintético sutil, ainda mantendo inteligibilidade
         if emotion == "whisper":
@@ -103,7 +104,8 @@ class JordanTTSEngine:
         chunks = re.findall(r".+?(?:[.!?…]+|$)", text)
         return [c.strip() for c in chunks if c.strip()]
 
-    def synthesize(self, text: str, emotion: str = "auto") -> tuple[int, np.ndarray]:
+    def synthesize(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> tuple[int, np.ndarray]:
+        tuning = tuning or {}
         text = self._pronounce(self._clean(text))
         if not text:
             return SR, np.zeros(1, dtype=np.float32)
@@ -116,7 +118,7 @@ class JordanTTSEngine:
             generated = self.pipeline(
                 chunk,
                 voice=voice,
-                speed=float(prosody["speed"]),
+                speed=float(prosody["speed"]) * max(0.80, min(1.35, float(tuning.get("speed", 1.0) or 1.0))),
                 split_pattern=r"\n+"
             )
             local = []
@@ -126,7 +128,7 @@ class JordanTTSEngine:
             if not local:
                 continue
             y = np.concatenate(local)
-            y = self._post(y, emo, chunk[-3:])
+            y = self._post(y, emo, chunk[-3:], tuning)
             pieces.append(y)
 
             pause_ms = 70
@@ -144,8 +146,8 @@ class JordanTTSEngine:
             return SR, np.zeros(1, dtype=np.float32)
         return SR, np.concatenate(pieces)
 
-    def wav_bytes(self, text: str, emotion: str = "auto") -> bytes:
-        sr, audio = self.synthesize(text, emotion)
+    def wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
+        sr, audio = self.synthesize(text, emotion, tuning)
         out = io.BytesIO()
         sf.write(out, audio, sr, format="WAV", subtype="PCM_16")
         return out.getvalue()

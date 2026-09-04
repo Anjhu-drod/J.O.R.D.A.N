@@ -70,6 +70,11 @@ service cloud.firestore {
       allow delete: if signedIn() && (request.auth.uid == userId || isCreator());
     }
 
+    match /lineageConfig/{configId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isCreator();
+    }
+
     match /users/{userId}/{document=**} {
       // Cada membro escreve somente na própria área. O creator pode ler para
       // manutenção/recuperação, mas não recebe escrita cruzada por esta regra.

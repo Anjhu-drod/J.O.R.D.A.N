@@ -1,4 +1,4 @@
-const CACHE_NAME = "jordan-v0.9.0";
+const CACHE_NAME = "jordan-v0.9.1";
 const FIREBASE_CACHE = "jordan-firebase-v12.18.0";
 
 const APP_SHELL = [
@@ -43,6 +43,11 @@ const APP_SHELL = [
   "./js/ui.js",
   "./js/utils.js",
   "./js/voice.js",
+  "./js/offlineKnowledgeService.js",
+  "./js/languageLearningService.js",
+  "./js/semanticBrainService.js",
+  "./js/presenceModeService.js",
+  "./js/lineageVoiceConfigService.js",
   "./manifest.webmanifest",
   "./assets/jordan-symbol.png",
   "./assets/icon-192.png",

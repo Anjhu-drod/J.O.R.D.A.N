@@ -72,6 +72,20 @@ export class JordanUI {
       saveVoiceEndpointButton: document.querySelector("#saveVoiceEndpointButton"),
       checkVoiceCoreButton: document.querySelector("#checkVoiceCoreButton"),
       testVoiceButton: document.querySelector("#testVoiceButton"),
+      offlineKnowledgeStatus: document.querySelector("#offlineKnowledgeStatus"),
+      presenceStatus: document.querySelector("#presenceStatus"),
+      voiceTuneSpeed: document.querySelector("#voiceTuneSpeed"),
+      voiceTuneSpeedValue: document.querySelector("#voiceTuneSpeedValue"),
+      voiceTunePitch: document.querySelector("#voiceTunePitch"),
+      voiceTunePitchValue: document.querySelector("#voiceTunePitchValue"),
+      voiceTuneBrightness: document.querySelector("#voiceTuneBrightness"),
+      voiceTuneBrightnessValue: document.querySelector("#voiceTuneBrightnessValue"),
+      voiceTuneEnergy: document.querySelector("#voiceTuneEnergy"),
+      voiceTuneEnergyValue: document.querySelector("#voiceTuneEnergyValue"),
+      voiceTuneExpressiveness: document.querySelector("#voiceTuneExpressiveness"),
+      voiceTuneExpressivenessValue: document.querySelector("#voiceTuneExpressivenessValue"),
+      saveVoiceTuningButton: document.querySelector("#saveVoiceTuningButton"),
+      testVoiceTuningButton: document.querySelector("#testVoiceTuningButton"),
       personalitySelect: document.querySelector("#personalitySelect"),
       personalityDescription: document.querySelector("#personalityDescription"),
       pwaStatus: document.querySelector("#pwaStatus"),
@@ -1197,6 +1211,38 @@ export class JordanUI {
       const labels = { idle: "IDLE", "user-speaking": "USER VOICE", "jordan-speaking": "JORDAN VOICE", processing: "PROCESSING" };
       this.elements.executionTelemetryLabel.textContent = `EXEC · ${labels[data.execution] || String(data.execution || "IDLE").toUpperCase()}`;
     }
+  }
+
+  setOfflineKnowledgeStatus(stats = {}) {
+    if (this.elements.offlineKnowledgeStatus) this.elements.offlineKnowledgeStatus.textContent = `${Number(stats.subjects || 16)} disciplinas · ${Number(stats.concepts || 0)} conceitos locais`;
+  }
+
+  setPresenceState(state = {}) {
+    document.body.dataset.presence = state.sleeping ? "sleep" : state.silent ? "silent" : "awake";
+    if (!this.elements.presenceStatus) return;
+    if (state.sleeping) this.elements.presenceStatus.textContent = "SLEEP MODE · só Bom dia / Socorro";
+    else if (state.silent) this.elements.presenceStatus.textContent = "SILENCE MODE · aguardando interação";
+    else if (state.sleepTime) this.elements.presenceStatus.textContent = `Ativa · sono programado ${state.sleepTime}`;
+    else this.elements.presenceStatus.textContent = "Ativa · acompanhamento contínuo";
+  }
+
+  setVoiceTuning(tuning = {}) {
+    const set=(input,value,label,format=(v)=>String(v))=>{ if(input) input.value=String(value); if(label) label.textContent=format(value); };
+    set(this.elements.voiceTuneSpeed, Number(tuning.speed ?? 1), this.elements.voiceTuneSpeedValue, v=>`${Number(v).toFixed(2)}x`);
+    set(this.elements.voiceTunePitch, Number(tuning.pitch ?? 0), this.elements.voiceTunePitchValue, v=>`${Number(v)>=0?"+":""}${Number(v).toFixed(1)} st`);
+    set(this.elements.voiceTuneBrightness, Number(tuning.brightness ?? 0), this.elements.voiceTuneBrightnessValue, v=>Number(v).toFixed(2));
+    set(this.elements.voiceTuneEnergy, Number(tuning.energy ?? 1), this.elements.voiceTuneEnergyValue, v=>`${Math.round(Number(v)*100)}%`);
+    set(this.elements.voiceTuneExpressiveness, Number(tuning.expressiveness ?? 1), this.elements.voiceTuneExpressivenessValue, v=>`${Math.round(Number(v)*100)}%`);
+  }
+
+  readVoiceTuning() {
+    return {
+      speed: Number(this.elements.voiceTuneSpeed?.value || 1),
+      pitch: Number(this.elements.voiceTunePitch?.value || 0),
+      brightness: Number(this.elements.voiceTuneBrightness?.value || 0),
+      energy: Number(this.elements.voiceTuneEnergy?.value || 1),
+      expressiveness: Number(this.elements.voiceTuneExpressiveness?.value || 1)
+    };
   }
 
   setNotificationStatus(permission) {

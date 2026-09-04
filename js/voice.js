@@ -21,6 +21,7 @@ export class VoiceService {
     onStatusChange,
     onListeningChange,
     onSpeakingChange,
+    onImmediateCommand,
     silenceMs = 2000
   } = {}) {
     this.onTranscript = onTranscript ?? (() => {});
@@ -28,6 +29,7 @@ export class VoiceService {
     this.onStatusChange = onStatusChange ?? (() => {});
     this.onListeningChange = onListeningChange ?? (() => {});
     this.onSpeakingChange = onSpeakingChange ?? (() => {});
+    this.onImmediateCommand = onImmediateCommand ?? (() => {});
     this.silenceMs = silenceMs;
 
     this.Recognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -41,7 +43,10 @@ export class VoiceService {
     this.restartTimer = null;
     this.silenceTimer = null;
     this.pendingTranscript = "";
+    this.pendingMeta = { confidence: 0, source: "voice" };
     this.currentSpeechText = "";
+    this.lastSoundAt = 0;
+    this.sharedVoiceTuning = { speed:1, pitch:0, brightness:0, energy:1, expressiveness:1 };
     this.speechToken = 0;
     this.audioContext = null;
     this.preferLocalRecognition = false;
@@ -81,6 +86,19 @@ export class VoiceService {
 
   get neuralVoiceEndpoint() {
     return this.neuralTts.endpoint;
+  }
+
+  setSharedVoiceTuning(tuning = {}) {
+    this.sharedVoiceTuning = { ...this.sharedVoiceTuning, ...tuning };
+  }
+
+  heardRecentSound(windowMs = 9000) {
+    return Date.now() - this.lastSoundAt <= windowMs;
+  }
+
+  isMobileLoopbackVoice() {
+    const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+    return mobile && /^http:\/\/(?:127(?:\.\d+){3}|localhost|\[::1\])(?::\d+)?/i.test(this.neuralTts.endpoint || "");
   }
 
   moodToNeuralEmotion(mood = "neutral", text = "") {
@@ -207,6 +225,8 @@ export class VoiceService {
       if (!transcript) return;
 
       this.pendingTranscript = transcript;
+      this.pendingMeta = { confidence: Number(chosen.confidence || 0), source: "voice" };
+      this.lastSoundAt = Date.now();
       this.onInterimTranscript(transcript);
       this.onStatusChange(`Ouvindo: “${transcript}”`);
       this.resetSilenceTimer();
@@ -279,7 +299,7 @@ export class VoiceService {
     }
 
     try {
-      await this.onTranscript(transcript);
+      await this.onTranscript(transcript, this.pendingMeta || { confidence: 0, source: "voice" });
     } finally {
       this.dispatching = false;
       if (this.alwaysListening && !this.manualStop && !this.isSpeaking && document.visibilityState === "visible") {
@@ -425,13 +445,14 @@ export class VoiceService {
 
     // V0.9: primeiro tentamos a voz neural própria da JORDAN. O sintetizador
     // do aparelho só existe como fallback para manter a assistente funcional.
-    if (this.neuralVoiceEnabled) {
+    if (this.neuralVoiceEnabled && !this.isMobileLoopbackVoice()) {
       try {
         const health = await this.neuralTts.health();
         if (health.ok && token === this.speechToken) {
           await this.neuralTts.speak(this.currentSpeechText, {
             emotion: this.moodToNeuralEmotion(mood, this.currentSpeechText),
             volume,
+            tuning: this.sharedVoiceTuning,
             onStart: () => this.onStatusChange("JORDAN VOICE CORE · falando..."),
             onEnd: () => {}
           });
@@ -464,7 +485,10 @@ export class VoiceService {
       return;
     }
 
-    const segments = buildJordanProsody(this.currentSpeechText, { rate, pitch, mood });
+    const tune = this.sharedVoiceTuning || {};
+    const tunedRate = rate * Number(tune.speed || 1);
+    const tunedPitch = pitch * Math.pow(2, Number(tune.pitch || 0) / 12);
+    const segments = buildJordanProsody(this.currentSpeechText, { rate: tunedRate, pitch: tunedPitch, mood });
     for (const segment of segments) {
       if (token !== this.speechToken) break;
       await this.speakSegment(segment, { volume, token, language });
@@ -603,8 +627,8 @@ export class VoiceService {
 
     try {
       const recognition = new this.Recognition();
-      // Interrupção é um comando de sistema em inglês.
-      recognition.lang = "en-US";
+      // O barge-in aceita os comandos curtos de interrupção em PT-BR e inglês.
+      recognition.lang = "pt-BR";
       recognition.interimResults = true;
       recognition.maxAlternatives = 5;
       recognition.continuous = true;
@@ -616,8 +640,13 @@ export class VoiceService {
             const transcript = result[j]?.transcript?.trim() || "";
             if (!isImmediateStopCommand(transcript)) continue;
             this.stopBargeInRecognition();
-            this.cancelSpeech({ resumeListening: true });
-            this.onStatusChange("Fala interrompida. Áudio continua ativo.");
+            if (/sil[eê]ncio/i.test(transcript)) {
+              this.cancelSpeech({ resumeListening: false });
+              Promise.resolve(this.onImmediateCommand(transcript)).catch(() => {});
+            } else {
+              this.cancelSpeech({ resumeListening: true });
+              this.onStatusChange("Fala interrompida. Áudio continua ativo.");
+            }
             return;
           }
         }

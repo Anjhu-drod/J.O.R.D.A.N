@@ -34,6 +34,11 @@ import { lineageAdminService } from "./lineageAdminService.js";
 import { SystemTelemetryService } from "./systemTelemetryService.js";
 import { voiceIdentityService } from "./voiceIdentityService.js";
 import { visualEffects } from "./visualEffectsService.js";
+import { OfflineKnowledgeService } from "./offlineKnowledgeService.js";
+import { LanguageLearningService } from "./languageLearningService.js";
+import { SemanticBrainService } from "./semanticBrainService.js";
+import { PresenceModeService } from "./presenceModeService.js";
+import { lineageVoiceConfigService, DEFAULT_SHARED_VOICE_TUNING } from "./lineageVoiceConfigService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -44,6 +49,10 @@ const media = new MediaService();
 const science = new ScienceService();
 const appLauncher = new AppLauncherService();
 const originalSongs = new OriginalSongService();
+const offlineKnowledge = new OfflineKnowledgeService();
+const languageLearning = new LanguageLearningService(memory);
+const semanticBrain = new SemanticBrainService({ memory, lineage: lineageService, offlineKnowledge, languageLearning });
+const presence = new PresenceModeService({ getSetting, setSetting });
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
@@ -51,7 +60,10 @@ const assistant = new JordanAssistant(calendar, memory, stories, {
   science,
   appLauncher,
   originalSongs,
-  lineage: lineageService
+  lineage: lineageService,
+  offlineKnowledge,
+  languageLearning,
+  semanticBrain
 });
 const ui = new JordanUI(calendar, memory);
 const telemetry = new SystemTelemetryService({ onUpdate: (data) => ui.updateTelemetry(data) });
@@ -74,12 +86,19 @@ let voiceIdentityEnabled = false;
 let allowThirdPartyConversation = true;
 let neuralVoiceEnabled = true;
 let neuralVoiceEndpoint = "http://127.0.0.1:8787";
+let sharedVoiceTuning = { ...DEFAULT_SHARED_VOICE_TUNING };
+let voiceConfigUnsubscribe = null;
+let presenceTimer = null;
 
 const voice = new VoiceService({
   silenceMs: 2000,
-  onTranscript: async (transcript) => {
+  onTranscript: async (transcript, recognitionMeta = {}) => {
     const speaker = voiceIdentityService.verifyRecent();
-    await handleCommand(transcript, { fromVoice: true, speaker });
+    await handleCommand(transcript, { fromVoice: true, speaker, recognitionMeta });
+  },
+  onImmediateCommand: async (transcript) => {
+    const speaker = voiceIdentityService.verifyRecent();
+    await handleCommand(transcript, { fromVoice: true, speaker, recognitionMeta: { source: "voice", confidence: 1 } });
   },
   onInterimTranscript: (transcript) => {
     ui.setInterimTranscript(transcript);
@@ -232,6 +251,8 @@ async function initialize() {
   ui.setLineageIdentity(lineageIdentity);
   ui.setCreatorMode(lineageService.isCreator);
   voiceIdentityService.setIdentity(lineageIdentity?.id || null);
+  await presence.initialize();
+  ui.setPresenceState?.(presence.state());
   if (ui.elements.lineageRelationSummary && lineageIdentity) {
     const mother = lineageService.relationAnswer("mother");
     const father = lineageService.relationAnswer("father");
@@ -305,6 +326,19 @@ async function initialize() {
   // aponta para um endpoint HTTPS remoto da mesma voz. Não sincronizamos essa URL.
   neuralVoiceEndpoint = localStorage.getItem("jordan.voice-endpoint-v1") || "http://127.0.0.1:8787";
 
+  const syncedVoiceprint = await startupCloudValue("voiceIdentityProfile", () => getSetting("voiceIdentityProfile", null), null);
+  if (!voiceIdentityService.hasProfile() && syncedVoiceprint?.vector) voiceIdentityService.importProfile(syncedVoiceprint);
+
+  sharedVoiceTuning = await startupCloudValue("shared voice tuning", () => lineageVoiceConfigService.load(), { ...DEFAULT_SHARED_VOICE_TUNING });
+  voice.setSharedVoiceTuning(sharedVoiceTuning);
+  ui.setVoiceTuning?.(sharedVoiceTuning);
+  voiceConfigUnsubscribe?.();
+  voiceConfigUnsubscribe = lineageVoiceConfigService.subscribe((next) => {
+    sharedVoiceTuning = next;
+    voice.setSharedVoiceTuning(next);
+    ui.setVoiceTuning?.(next);
+  });
+
   voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
@@ -322,6 +356,7 @@ async function initialize() {
   ui.setLanguageStatus(languageMode, voice.currentLanguage);
   ui.setInternetStatus({ enabled: internetEnabled, online: navigator.onLine });
   ui.setLexiconStatus(getLexiconStats());
+  ui.setOfflineKnowledgeStatus?.(offlineKnowledge.stats());
   renderSystemCommandLearning();
 
   try {
@@ -432,6 +467,22 @@ async function initialize() {
 
   await registerServiceWorker();
   reminders.start();
+  clearInterval(presenceTimer);
+  presenceTimer = setInterval(async () => {
+    const due = presence.due(new Date());
+    if (due.shouldRemind) {
+      presence.lastReminderDate = due.dateKey;
+      const msg = "Ei, esse é seu lembrete de horário de dormir.";
+      ui.addMessage("JORDAN", msg);
+      if (voiceEnabled && !presence.silent && !presence.sleeping) await voice.speak(msg, { volume: assistantVolume, mood: "soft" });
+    }
+    if (due.shouldSleep) {
+      await presence.enterSleep();
+      ui.setPresenceState?.(presence.state());
+      voice.cancelSpeech({ resumeListening: false });
+      ui.setStatus("SLEEP MODE · aguardando ‘Bom dia’ ou ‘Socorro’");
+    }
+  }, 30000);
   resetIdleTimer();
 
   ui.elements.commandInput.focus();
@@ -645,6 +696,25 @@ function bindEvents() {
     if (result?.blocked) ui.toast("Toque no Play do player para liberar o áudio.", "JORDAN MUSIC");
   });
 
+  ui.elements.saveVoiceTuningButton?.addEventListener("click", async () => {
+    registerInteraction();
+    if (!lineageService.isCreator) { ui.toast("Ajuste global de voz é exclusivo do criador.", "JORDAN VOICE"); return; }
+    try {
+      const next = ui.readVoiceTuning?.() || sharedVoiceTuning;
+      sharedVoiceTuning = await lineageVoiceConfigService.save(next);
+      voice.setSharedVoiceTuning(sharedVoiceTuning);
+      ui.toast("Perfil de voz global salvo para toda a linhagem.", "JORDAN VOICE");
+    } catch (error) { ui.toast(`Não consegui salvar a voz: ${error.message}`, "JORDAN VOICE"); }
+  });
+
+  ui.elements.testVoiceTuningButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const local = ui.readVoiceTuning?.() || sharedVoiceTuning;
+    voice.setSharedVoiceTuning(local);
+    await voice.speak("Oi! Eu sou a JORDAN. Essa é a minha voz com os ajustes atuais!", { volume: assistantVolume, mood: "excited" });
+    voice.setSharedVoiceTuning(sharedVoiceTuning);
+  });
+
   ui.elements.themeSelect?.addEventListener("change", async (event) => {
     registerInteraction();
     theme = event.target.value;
@@ -796,8 +866,10 @@ function bindEvents() {
         durationMs: 8000,
         onProgress: (value) => updateVoiceIdentityStatus(`Capturando voz · ${Math.round(value * 100)}%`)
       });
-      updateVoiceIdentityStatus("Ativo · perfil local cadastrado");
-      ui.toast("Perfil de voz salvo somente neste dispositivo.", "JORDAN VOICE LOCK");
+      const voiceprint = voiceIdentityService.exportProfile();
+      if (voiceprint) await setSetting("voiceIdentityProfile", voiceprint);
+      updateVoiceIdentityStatus("Ativo · perfil cadastrado e sincronizável");
+      ui.toast("Perfil de voz cadastrado. A assinatura matemática pode acompanhar sua JORDAN ID sem enviar áudio bruto.", "JORDAN VOICE LOCK");
     } catch (error) {
       updateVoiceIdentityStatus(`Falha no cadastro · ${error.message}`);
       ui.toast(error.message, "JORDAN VOICE LOCK");
@@ -807,9 +879,10 @@ function bindEvents() {
     }
   });
 
-  ui.elements.clearVoiceProfileButton?.addEventListener("click", () => {
-    if (!window.confirm("Apagar o perfil de voz local desta identidade neste dispositivo?")) return;
+  ui.elements.clearVoiceProfileButton?.addEventListener("click", async () => {
+    if (!window.confirm("Apagar o perfil de voz desta identidade?")) return;
     voiceIdentityService.clearProfile();
+    await setSetting("voiceIdentityProfile", null);
     updateVoiceIdentityStatus();
   });
 
@@ -957,18 +1030,67 @@ async function toggleVoice() {
   voice.start({ always: false });
 }
 
-async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
+async function handleCommand(text, { fromVoice = false, speaker = null, recognitionMeta = {} } = {}) {
   registerInteraction();
 
-  // Digitar ou falar um novo comando sempre pode interromper a fala atual.
   if (voice.isSpeaking) voice.cancelSpeech({ resumeListening: false });
+
+  if (presence.sleeping) {
+    if (presence.isWake(text)) {
+      await presence.wake();
+      ui.setPresenceState?.(presence.state());
+      const msg = "Bom dia! Voltei. Tô ouvindo.";
+      ui.addMessage("VOCÊ", text); ui.addMessage("JORDAN", msg);
+      if (voiceEnabled) await voice.speak(msg, { volume: assistantVolume, mood: "happy" });
+      if (voice.alwaysListening) setTimeout(() => voice.start({ always: true }), 150);
+      return;
+    }
+    if (presence.isEmergency(text)) {
+      const canUsePrivatePriority = !fromVoice || !voiceIdentityEnabled || speaker?.authorized;
+      const number = canUsePrivatePriority ? await assistant.getHelpNumber() : "190";
+      ui.addMessage("VOCÊ", text);
+      ui.addMessage("JORDAN", `Emergência detectada. Abri o acesso de ajuda para ${number}.`);
+      ui.openEmergencyPanel(number);
+      if (voiceEnabled) await voice.speak(`Emergência detectada. Acesso de ajuda ${number}.`, { volume: assistantVolume, mood: "serious" });
+      return;
+    }
+    ui.setStatus("SLEEP MODE · aguardando ‘Bom dia’ ou ‘Socorro’");
+    return;
+  }
+
+  if (presence.isSleep(text)) {
+    await presence.enterSleep(); ui.setPresenceState?.(presence.state());
+    ui.addMessage("VOCÊ", text); ui.addMessage("JORDAN", "Boa noite. Vou ficar em modo sono. Se precisar, diga ‘Bom dia’ ou ‘Socorro’. ");
+    if (voiceEnabled) await voice.speak("Boa noite. Vou ficar em modo sono. Se precisar, diga bom dia ou socorro.", { volume: assistantVolume, mood: "soft" });
+    return;
+  }
+
+  if (presence.isSilence(text)) {
+    voice.cancelSpeech({ resumeListening: false });
+    await presence.enterSilence(); ui.setPresenceState?.(presence.state());
+    ui.addMessage("VOCÊ", text); ui.addMessage("JORDAN", "SILENCE MODE");
+    ui.setStatus("SILENCE MODE · aguardando interação do usuário");
+    if (voice.alwaysListening) setTimeout(() => voice.start({ always: true }), 120);
+    return;
+  }
+
+  if (presence.silent) { await presence.clearSilence(); ui.setPresenceState?.(presence.state()); }
+  const schedulePresence = await presence.parseSchedule(text);
+  if (schedulePresence?.handled) {
+    ui.addMessage("VOCÊ", text); ui.addMessage("JORDAN", schedulePresence.text);
+    if (voiceEnabled) await voice.speak(schedulePresence.text, { volume: assistantVolume, mood: "neutral" });
+    ui.setPresenceState?.(presence.state());
+    return;
+  }
 
   ui.addMessage("VOCÊ", text);
   ui.setInterimTranscript("");
   ui.setStatus("Processando...");
   telemetry.setExecution("processing");
   const visualKind = ui.pulseCommand(text, "start");
-  ui.playCinematic(visualKind, visualKind.toUpperCase(), "Comando recebido · analisando intenção", 420);
+  if (["research","navigation","system","music","calendar","science"].includes(visualKind)) {
+    ui.playCinematic(visualKind, visualKind.toUpperCase(), "Comando recebido · analisando intenção", 420);
+  }
 
   if (fromVoice && voiceIdentityEnabled && !speaker?.authorized) {
     const score = Math.round((speaker?.score || 0) * 100);
@@ -989,7 +1111,7 @@ async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
 
     // Terceiros entram em uma rota separada e estritamente read-only. Não importa
     // se uma frase escapa do regex de comandos: ela nunca chega ao execute() normal.
-    const readOnlyResult = await assistant.executeReadOnly(text);
+    const readOnlyResult = await assistant.executeReadOnly(text, recognitionMeta);
     ui.addMessage("JORDAN", readOnlyResult.text);
     ui.setStatus("VOICE LOCK · CONVERSA DE TERCEIRO");
 
@@ -1022,7 +1144,7 @@ async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
       return;
     }
 
-    const result = await assistant.execute(text);
+    const result = await assistant.execute(text, { source: fromVoice ? "voice" : "typed", confidence: fromVoice ? Number(recognitionMeta?.confidence || 0) : 1 });
     ui.addMessage("JORDAN", result.text);
 
     if (result.refreshAgenda) {
@@ -1031,6 +1153,11 @@ async function handleCommand(text, { fromVoice = false, speaker = null } = {}) {
 
     if (result.refreshMemory) await ui.renderMemory();
 
+    if (result.action === "stop-speaking") {
+      voice.cancelSpeech({ resumeListening: voice.alwaysListening });
+      ui.setStatus("Fala interrompida.");
+      return;
+    }
     if (result.action === "open-view" && result.view) ui.openView(result.view);
     if (result.action === "open-emergency") ui.openEmergencyPanel(result.priorityNumber || "190");
     if (result.action === "open-tutorial") ui.openTutorialPanel();
@@ -1270,30 +1397,16 @@ function registerInteraction() {
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = null;
-
   const profile = assistant.getPersonality();
-  const delay = randomIdleDelay(profile);
-  if (!delay) return;
-
+  if (!profile || !["extroverted", "playful"].includes(profile.id)) return;
+  const delay = 65000 + Math.floor(Math.random() * 35000);
   idleTimer = setTimeout(async () => {
-    const quietFor = Date.now() - lastInteractionAt;
-    if (quietFor < delay - 500) return resetIdleTimer();
-    if (document.visibilityState !== "visible") return resetIdleTimer();
-    if (voice.isSpeaking || voice.listening || document.querySelector("dialog[open]")) return resetIdleTimer();
-
-    const prompt = randomIdlePrompt(profile);
-    if (!prompt) return;
-
+    if (presence.sleeping || presence.silent) return resetIdleTimer();
+    if (document.visibilityState !== "visible" || voice.isSpeaking || document.querySelector("dialog[open]")) return resetIdleTimer();
+    if (!voice.heardRecentSound?.(12000)) return resetIdleTimer();
+    const prompt = "Tem alguém aí?";
     ui.addMessage("JORDAN", prompt);
-    if (voiceEnabled && voice.synthesisSupported) {
-      await voice.speak(prompt, {
-        volume: assistantVolume,
-        rate: profile.voice.rate,
-        pitch: profile.voice.pitch,
-        mood: "excited"
-      });
-    }
-
+    if (voiceEnabled && voice.synthesisSupported) await voice.speak(prompt, { volume: assistantVolume, mood: "curious" });
     lastInteractionAt = Date.now();
     resetIdleTimer();
   }, delay);

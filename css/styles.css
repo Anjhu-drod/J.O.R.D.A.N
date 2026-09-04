@@ -4301,3 +4301,16 @@ body.nav-flash .hud-rail::before {
     animation-iteration-count:1 !important;
   }
 }
+
+/* V0.9.1 — knowledge / presence / creator voice lab */
+.knowledge-card,.presence-card,.creator-voice-lab{position:relative;overflow:hidden}
+.knowledge-card::before,.presence-card::before,.creator-voice-lab::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 0 42%,rgba(255,40,70,.07) 50%,transparent 58%);transform:translateX(-120%);animation:jordanCardScan 9s ease-in-out infinite}
+@keyframes jordanCardScan{0%,68%{transform:translateX(-120%)}82%,100%{transform:translateX(120%)}}
+.voice-tuning-grid{display:grid;gap:10px;margin:14px 0}
+.voice-tuning-grid label{display:grid;grid-template-columns:1fr auto;gap:7px;font-size:10px;letter-spacing:.14em;color:var(--muted,#b3a8aa)}
+.voice-tuning-grid label b{color:var(--accent,#ff405d);font:600 10px/1 ui-monospace,monospace}
+.voice-tuning-grid input[type="range"]{grid-column:1/-1;width:100%;accent-color:var(--accent,#ff3153);touch-action:pan-x}
+body[data-presence="sleep"] .jordan-core,body[data-presence="sleep"] .core-orbit{filter:saturate(.35) brightness(.65)}
+body[data-presence="sleep"] .wave-ring{animation-duration:9s!important;opacity:.15!important}
+body[data-presence="silent"] .wave-ring{opacity:.08!important}
+@media(max-width:920px){.voice-tuning-grid{gap:14px}.voice-tuning-grid input[type="range"]{height:30px}.creator-voice-lab .backup-actions{display:grid;grid-template-columns:1fr}.creator-voice-lab .hud-button{width:100%;min-height:44px}}

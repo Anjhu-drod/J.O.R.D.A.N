@@ -38,3 +38,17 @@ No celular use um endpoint HTTPS acessível pelo celular. A URL não é sincroni
 ## Atualização
 
 O Service Worker desta versão usa cache `jordan-v0.9.0`.
+
+## V0.9.1 — Semantic + Offline + Presence Core
+
+- Corrige fallback de voz no celular quando o Voice Core está apontando para localhost/127.0.0.1.
+- Voice Lock com terceiros permitidos mantém conversa e conhecimento geral em rota read-only.
+- Offline Knowledge Core: 16 disciplinas e mais de 150 conceitos locais, além de aritmética básica, porcentagem e raiz quadrada.
+- Semantic Brain resolve relações como “meu nome” pelo contexto do usuário em vez de depender só de respostas prontas.
+- Language Learning aprende palavras e regras ensinadas pelo chat; em voz, só pergunta palavra desconhecida quando a confiança do reconhecimento é alta.
+- Presence Core: Boa noite = Sleep Mode; Bom dia = acordar; Socorro permanece disponível; Jordan silêncio = Silence Mode.
+- Personalidade extrovertida deixa de repetir prompts aleatórios; só faz um check curto após silêncio e atividade de áudio recente.
+- Creator Voice Lab: Jhuan pode ajustar speed/pitch/brightness/energy/expressiveness globalmente em `lineageConfig/voice`.
+- Voice Server aceita tuning compartilhado.
+
+Versão do cache PWA: `jordan-v0.9.1`.

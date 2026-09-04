@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.9.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.9.1" />
 </head>
 <body data-theme="crimson" class="auth-locked">
   <div class="fx-grid"></div>
@@ -465,6 +465,30 @@
             </div>
             <p class="system-description">A V0.9 tenta primeiro a voz neural própria JORDAN Spark. Se o Voice Server estiver desligado, o sintetizador do aparelho entra apenas como fallback. No PC, 127.0.0.1 usa o servidor local; no celular, configure um endpoint HTTPS acessível pelo aparelho.</p>
           </article>
+          <article class="hud-panel system-card knowledge-card">
+            <span>OFFLINE KNOWLEDGE CORE</span>
+            <strong id="offlineKnowledgeStatus">16 disciplinas · carregando...</strong>
+            <p class="system-description">Base local de ensino médio para matemática, linguagens, ciências humanas, natureza, artes, tecnologia e respostas básicas mesmo sem internet.</p>
+          </article>
+          <article class="hud-panel system-card presence-card">
+            <span>PRESENCE CORE</span>
+            <strong id="presenceStatus">Ativa · acompanhamento contínuo</strong>
+            <p class="system-description">“Boa noite” ativa Sleep Mode; “Bom dia” acorda; “Jordan silêncio” cala a JORDAN até a próxima interação. Socorro continua disponível no sono.</p>
+          </article>
+          <article class="hud-panel system-card creator-voice-lab" data-creator-only>
+            <span>CREATOR VOICE LAB · GLOBAL</span>
+            <strong>JORDAN Spark · perfil compartilhado</strong>
+            <p class="system-description">Somente Jhuan altera. Os ajustes são salvos no Firestore e aplicados à voz de todos os dispositivos.</p>
+            <div class="voice-tuning-grid">
+              <label>VELOCIDADE <b id="voiceTuneSpeedValue">1.00x</b><input id="voiceTuneSpeed" type="range" min="0.80" max="1.35" step="0.01" value="1"></label>
+              <label>PITCH <b id="voiceTunePitchValue">+0.0 st</b><input id="voiceTunePitch" type="range" min="-3" max="4" step="0.1" value="0"></label>
+              <label>BRILHO <b id="voiceTuneBrightnessValue">0.00</b><input id="voiceTuneBrightness" type="range" min="-0.35" max="0.45" step="0.01" value="0"></label>
+              <label>ENERGIA <b id="voiceTuneEnergyValue">100%</b><input id="voiceTuneEnergy" type="range" min="0.65" max="1.35" step="0.01" value="1"></label>
+              <label>EXPRESSIVIDADE <b id="voiceTuneExpressivenessValue">100%</b><input id="voiceTuneExpressiveness" type="range" min="0.55" max="1.50" step="0.01" value="1"></label>
+            </div>
+            <div class="backup-actions"><button id="testVoiceTuningButton" class="hud-button small">TESTAR AJUSTES</button><button id="saveVoiceTuningButton" class="hud-button small primary">SALVAR PARA TODOS</button></div>
+          </article>
+
           <article class="hud-panel system-card personality-card">
             <span>PERSONALIDADE</span>
             <strong>Comportamento da JORDAN</strong>
@@ -819,7 +843,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.9.0";
+    const JORDAN_ASSET_VERSION = "0.9.1";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

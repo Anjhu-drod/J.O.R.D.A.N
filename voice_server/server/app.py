@@ -18,6 +18,7 @@ engine = JordanTTSEngine()
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1600)
     emotion: str = "auto"
+    tuning: dict = Field(default_factory=dict)
 
 @app.get("/health")
 def health():
@@ -26,7 +27,7 @@ def health():
 @app.post("/speak")
 def speak(req: SpeakRequest):
     try:
-        audio = engine.wav_bytes(req.text, req.emotion)
+        audio = engine.wav_bytes(req.text, req.emotion, req.tuning)
         return Response(content=audio, media_type="audio/wav")
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))

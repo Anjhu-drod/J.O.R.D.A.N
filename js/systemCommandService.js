@@ -20,7 +20,7 @@ const COMMANDS = [
     phrase: "Shut up",
     hint: "shât âp",
     description: "Interrompe a fala atual da JORDAN.",
-    aliases: ["stop talking", "be quiet", "chat up", "shut app"]
+    aliases: ["stop talking", "be quiet", "chat up", "shut app", "cala a boca", "para de falar", "pare de falar", "fica quieta", "silencio", "silêncio", "jordan silencio", "jordan silêncio"]
   },
   {
     id: "open_calendar",
