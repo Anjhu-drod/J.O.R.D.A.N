@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.9.2" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.10.0" />
 </head>
 <body data-theme="crimson" class="auth-locked">
   <div class="fx-grid"></div>
@@ -497,7 +497,7 @@
             <strong id="speechSynthesisStatus">JORDAN Spark Neural V1</strong>
             <div id="neuralVoiceStatus" class="voice-core-status"><i></i><b>VERIFICANDO VOICE SERVER...</b></div>
             <label class="hud-toggle compact"><input id="neuralVoiceToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR VOZ PRÓPRIA</b></label>
-            <label class="hud-toggle compact"><input id="deviceVoiceFallbackToggle" type="checkbox" /><span class="toggle-track"><i></i></span><b>CONTINGÊNCIA DO DISPOSITIVO</b></label>
+            <label class="hud-toggle compact"><input id="deviceVoiceFallbackToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>CONTINGÊNCIA DO DISPOSITIVO</b></label>
             <label class="voice-endpoint-label">VOICE SERVER URL
               <input id="neuralVoiceEndpoint" class="system-input" type="url" spellcheck="false" value="http://127.0.0.1:8787" placeholder="https://voice.seudominio.com" />
             </label>
@@ -506,7 +506,18 @@
               <button id="checkVoiceCoreButton" class="hud-button small">TESTAR CONEXÃO</button>
               <button id="testVoiceButton" class="hud-button small primary">OUVIR JORDAN</button>
             </div>
-            <p class="system-description">A voz neural JORDAN Spark é a identidade oficial. Na V0.9.2 a voz do Windows/iPhone/Android NÃO entra escondida por cima: se o Voice Core cair, a resposta fica em texto, a menos que você ative manualmente a contingência. Para a mesma voz em todos os aparelhos, use o mesmo endpoint HTTPS do Voice Core.</p>
+            <p class="system-description">JORDAN Spark continua sendo a voz oficial. Se o núcleo neural falhar, a contingência do dispositivo evita que ela fique muda. O servidor também reconstrói automaticamente embeddings de voz ausentes na primeira fala. Para manter a mesma Spark em todos os aparelhos, use o mesmo endpoint HTTPS do JORDAN Core.</p>
+          </article>
+          <article class="hud-panel system-card agent-core-card">
+            <span>JORDAN AUTONOMOUS AGENT CORE</span>
+            <strong>Raciocínio geral + uso de ferramentas</strong>
+            <div id="agentCoreStatus" class="voice-core-status"><i></i><b>VERIFICANDO AGENT CORE...</b></div>
+            <label class="hud-toggle compact"><input id="autonomousAgentToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR CÉREBRO AUTÔNOMO</b></label>
+            <div class="backup-actions">
+              <button id="checkAgentCoreButton" class="hud-button small">TESTAR AGENT CORE</button>
+              <button id="resetAgentConversationButton" class="hud-button small">REINICIAR CONTEXTO</button>
+            </div>
+            <p class="system-description">Quando online, a JORDAN deixa de depender de respostas prontas para conversar: ela interpreta o objetivo, raciocina sobre o contexto e decide quando usar calendário, memória, mensagens, localização, apps, pesquisa atual e capacidades antigas. A chave da API fica somente no servidor JORDAN Core, nunca no navegador.</p>
           </article>
           <article class="hud-panel system-card knowledge-card">
             <span>OFFLINE KNOWLEDGE CORE</span>
@@ -892,7 +903,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.9.2";
+    const JORDAN_ASSET_VERSION = "0.10.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

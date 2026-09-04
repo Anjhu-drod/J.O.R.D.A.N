@@ -40,6 +40,7 @@ import { SemanticBrainService } from "./semanticBrainService.js";
 import { PresenceModeService } from "./presenceModeService.js";
 import { lineageVoiceConfigService, DEFAULT_SHARED_VOICE_TUNING } from "./lineageVoiceConfigService.js";
 import { MessageService } from "./messageService.js";
+import { AutonomousAgentService } from "./autonomousAgentService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -55,6 +56,7 @@ const languageLearning = new LanguageLearningService(memory);
 const semanticBrain = new SemanticBrainService({ memory, lineage: lineageService, offlineKnowledge, languageLearning });
 const presence = new PresenceModeService({ getSetting, setSetting });
 const messages = new MessageService(lineageService);
+const autonomousAgent = new AutonomousAgentService();
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
@@ -96,6 +98,8 @@ let sharedVoiceTuning = { ...DEFAULT_SHARED_VOICE_TUNING };
 let voiceConfigUnsubscribe = null;
 let presenceTimer = null;
 let messagePollTimer = null;
+let autonomousAgentEnabled = true;
+let lastAgentFallbackNoticeAt = 0;
 
 const voice = new VoiceService({
   silenceMs: 2000,
@@ -329,7 +333,8 @@ async function initialize() {
   voiceIdentityEnabled = await startupCloudValue("voiceIdentityEnabled", () => getSetting("voiceIdentityEnabled", false), false);
   allowThirdPartyConversation = await startupCloudValue("allowThirdPartyConversation", () => getSetting("allowThirdPartyConversation", true), true);
   neuralVoiceEnabled = await startupCloudValue("neuralVoiceEnabled", () => getSetting("neuralVoiceEnabled", true), true);
-  deviceVoiceFallbackEnabled = await startupCloudValue("deviceVoiceFallbackEnabled", () => getSetting("deviceVoiceFallbackEnabled", false), false);
+  deviceVoiceFallbackEnabled = await startupCloudValue("deviceVoiceFallbackEnabled", () => getSetting("deviceVoiceFallbackEnabled", true), true);
+  autonomousAgentEnabled = await startupCloudValue("autonomousAgentEnabled", () => getSetting("autonomousAgentEnabled", true), true);
   musicDefaultSource = await startupCloudValue("music.defaultSource", () => getSetting("music.defaultSource", "youtube"), "youtube");
   if (!['youtube','jordan'].includes(musicDefaultSource)) musicDefaultSource = "youtube";
   // O endpoint é específico do aparelho: PC pode usar localhost enquanto o celular
@@ -350,6 +355,7 @@ async function initialize() {
   });
 
   voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
+  autonomousAgent.configure({ enabled: autonomousAgentEnabled, endpoint: neuralVoiceEndpoint });
   voice.setDeviceVoiceFallback(deviceVoiceFallbackEnabled);
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
@@ -362,6 +368,7 @@ async function initialize() {
   if (ui.elements.thirdPartyConversationToggle) ui.elements.thirdPartyConversationToggle.checked = allowThirdPartyConversation;
   if (ui.elements.neuralVoiceToggle) ui.elements.neuralVoiceToggle.checked = neuralVoiceEnabled;
   if (ui.elements.deviceVoiceFallbackToggle) ui.elements.deviceVoiceFallbackToggle.checked = deviceVoiceFallbackEnabled;
+  if (ui.elements.autonomousAgentToggle) ui.elements.autonomousAgentToggle.checked = autonomousAgentEnabled;
   if (ui.elements.musicDefaultSource) ui.elements.musicDefaultSource.value = musicDefaultSource;
   if (ui.elements.neuralVoiceEndpoint) ui.elements.neuralVoiceEndpoint.value = neuralVoiceEndpoint;
   voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
@@ -407,6 +414,7 @@ async function initialize() {
   }
 
   updateVoiceStatus();
+  updateAgentStatus();
   ui.setPersonality(assistant.getPersonality());
 
   if (voice.browserSynthesisSupported && "onvoiceschanged" in window.speechSynthesis) {
@@ -555,6 +563,17 @@ async function updateVoiceStatus({ force = false } = {}) {
       ui.elements.speechSynthesisStatus.textContent = "Voice Core offline · resposta em texto";
     }
   }
+}
+
+async function updateAgentStatus({ force = false } = {}) {
+  if (!ui.elements.agentCoreStatus) return;
+  if (!autonomousAgentEnabled) {
+    ui.setAgentCoreStatus?.({ ok: false, enabled: false, reason: "disabled" });
+    return;
+  }
+
+  const health = await autonomousAgent.health({ force }).catch((error) => ({ ok: false, error }));
+  ui.setAgentCoreStatus?.({ ...health, enabled: true });
 }
 
 function renderSystemCommandLearning() {
@@ -791,6 +810,34 @@ function bindEvents() {
       : "Contingência desligada. Se o Voice Core cair, a JORDAN responde em texto em vez de trocar de voz.", "JORDAN VOICE");
   });
 
+  ui.elements.autonomousAgentToggle?.addEventListener("change", async (event) => {
+    registerInteraction();
+    autonomousAgentEnabled = Boolean(event.target.checked);
+    await setSetting("autonomousAgentEnabled", autonomousAgentEnabled);
+    autonomousAgent.configure({ enabled: autonomousAgentEnabled, endpoint: neuralVoiceEndpoint });
+    autonomousAgent.resetConversation();
+    await updateAgentStatus({ force: true });
+    ui.toast(autonomousAgentEnabled
+      ? "Agent Core ativado. A JORDAN vai raciocinar e escolher ferramentas antes de responder."
+      : "Agent Core desativado. A JORDAN voltou ao cérebro local legado.", "JORDAN AGENT");
+  });
+
+  ui.elements.resetAgentConversationButton?.addEventListener("click", () => {
+    registerInteraction();
+    autonomousAgent.resetConversation();
+    ui.toast("Contexto temporário do Agent Core reiniciado. Memórias e calendário foram preservados.", "JORDAN AGENT");
+  });
+
+  ui.elements.checkAgentCoreButton?.addEventListener("click", async () => {
+    registerInteraction();
+    ui.setAgentCoreStatus?.({ ok: false, enabled: autonomousAgentEnabled, reason: "checking" });
+    const health = await autonomousAgent.health({ force: true });
+    ui.setAgentCoreStatus?.({ ...health, enabled: autonomousAgentEnabled });
+    ui.toast(health.available
+      ? `Agent Core online · ${health.model || "modelo configurado"}.`
+      : (health.ok ? "JORDAN Core respondeu, mas falta configurar OPENAI_API_KEY no servidor." : "Agent Core não respondeu."), "JORDAN AGENT");
+  });
+
   ui.elements.musicDefaultSource?.addEventListener("change", async (event) => {
     musicDefaultSource = event.target.value === "jordan" ? "jordan" : "youtube";
     await setSetting("music.defaultSource", musicDefaultSource);
@@ -803,8 +850,10 @@ function bindEvents() {
     neuralVoiceEndpoint = value.replace(/\/+$/, "");
     localStorage.setItem("jordan.voice-endpoint-v1", neuralVoiceEndpoint);
     voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
-    await updateVoiceStatus({ force: true });
-    ui.toast("Endpoint da voz salvo neste perfil JORDAN.", "JORDAN VOICE");
+    autonomousAgent.configure({ enabled: autonomousAgentEnabled, endpoint: neuralVoiceEndpoint });
+    autonomousAgent.resetConversation();
+    await Promise.all([updateVoiceStatus({ force: true }), updateAgentStatus({ force: true })]);
+    ui.toast("Endpoint do JORDAN Core salvo neste dispositivo.", "JORDAN CORE");
   });
 
   ui.elements.checkVoiceCoreButton?.addEventListener("click", async () => {
@@ -1139,6 +1188,240 @@ async function buildMorningBriefing() {
   return `${greeting} ${agendaText} ${messagesText}`;
 }
 
+
+function agentEventView(event) {
+  if (!event) return null;
+  return {
+    id: event.id,
+    title: event.title,
+    startAt: event.startAt,
+    endAt: event.endAt,
+    allDay: Boolean(event.allDay),
+    category: event.category || "default",
+    description: event.description || ""
+  };
+}
+
+async function buildAgentContext() {
+  const [facts, upcoming, unreadCount] = await Promise.all([
+    memory.summarizeFacts(10).catch(() => []),
+    calendar.upcoming(8).catch(() => []),
+    messages.unreadCount().catch(() => 0)
+  ]);
+
+  const identity = lineageService.currentIdentity;
+  return {
+    now: new Date().toISOString(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo",
+    language: languageMode,
+    online: navigator.onLine,
+    currentView: ui.currentView || "core",
+    user: identity ? {
+      id: identity.id,
+      firstName: identity.firstName,
+      confirmationName: identity.confirmationName || identity.firstName,
+      isCreator: Boolean(lineageService.isCreator)
+    } : null,
+    personality: assistant.getPersonality()?.id || "extroverted",
+    memories: facts.map((item) => ({ label: item.label, value: item.value })),
+    upcomingEvents: upcoming.map(agentEventView),
+    unreadMessages: unreadCount,
+    availableApps: appLauncher.listTargets().map((item) => item.id)
+  };
+}
+
+async function applyLegacyAgentAction(result) {
+  if (!result) return;
+  if (result.refreshAgenda) {
+    await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
+  }
+  if (result.refreshMemory) await ui.renderMemory();
+  if (result.refreshMessages || result.action === "message-sent") await refreshMessagesView({ markSeen: false }).catch(console.warn);
+
+  if (result.action === "open-view" && result.view) ui.openView(result.view);
+  if (result.action === "open-emergency") ui.openEmergencyPanel(result.priorityNumber || "190");
+  if (result.action === "open-tutorial") ui.openTutorialPanel();
+  if (result.action === "open-link" && result.url) ui.addExternalLink(result.linkLabel || "ABRIR", result.url, "MÍDIA / LINK");
+  if (result.action === "location-results" && result.places) ui.addLocationLinks(result.places);
+  if (result.action === "research-results" && result.research) ui.renderResearch(result.research);
+  if (result.action === "route-results" && result.route) ui.renderRoute(result.route);
+  if (result.action === "science-result" && result.science) ui.renderScience(result.science);
+  if (result.action === "open-music-library") ui.openCompanion("media");
+  if (result.action === "play-media" && result.track) {
+    ui.renderMediaTrack(result.track);
+    await media.playTrack(result.track.id).catch(() => null);
+  }
+  if (result.action === "open-youtube-music") {
+    const query = String(result.query || "").trim();
+    const url = query
+      ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
+      : "https://www.youtube.com/";
+    const popup = window.open(url, "_blank", "noopener,noreferrer");
+    if (!popup) ui.addExternalLink("ABRIR YOUTUBE", url, "JORDAN MUSIC");
+  }
+  if (result.action === "launch-app" && result.appTarget?.url) {
+    const popup = window.open(result.appTarget.url, "_blank", "noopener,noreferrer");
+    if (!popup) ui.addExternalLink(`ABRIR ${result.appTarget.label}`, result.appTarget.url, "APP / SITE");
+  }
+}
+
+function createAgentToolHandlers() {
+  return {
+    async get_agenda({ range = "upcoming", limit = 10 } = {}) {
+      let events = [];
+      if (range === "today") {
+        events = await calendar.today();
+      } else if (range === "tomorrow") {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        events = await calendar.forDay(tomorrow);
+      } else if (range === "next_7_days") {
+        events = await calendar.nextDays(7);
+      } else {
+        events = await calendar.upcoming(Math.max(1, Math.min(30, Number(limit) || 10)));
+      }
+      return { ok: true, events: events.slice(0, Math.max(1, Math.min(30, Number(limit) || 10))).map(agentEventView) };
+    },
+
+    async create_calendar_event({ title, start_at, end_at = null, duration_minutes = null, description = "", all_day = false } = {}) {
+      const startAt = new Date(start_at);
+      if (!title?.trim() || Number.isNaN(startAt.getTime())) throw new Error("Título ou data inicial inválidos.");
+
+      let endAt = end_at ? new Date(end_at) : null;
+      if (!endAt || Number.isNaN(endAt.getTime())) {
+        const minutes = Math.max(1, Number(duration_minutes) || (all_day ? 1440 : 60));
+        endAt = new Date(startAt.getTime() + minutes * 60000);
+      }
+      if (endAt <= startAt) throw new Error("O fim do compromisso precisa ser depois do início.");
+
+      const event = await calendar.create({
+        title: title.trim(),
+        startAt,
+        endAt,
+        description: String(description || ""),
+        source: "jordan-agent",
+        allDay: Boolean(all_day)
+      });
+      await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
+      return { ok: true, event: agentEventView(event) };
+    },
+
+    async delete_calendar_event({ query = "" } = {}) {
+      const matches = await calendar.search(String(query || ""), { futureOnly: false });
+      if (!matches.length) return { ok: false, error: "Nenhum compromisso corresponde à busca." };
+      if (matches.length > 1) {
+        return { ok: false, needs_disambiguation: true, matches: matches.slice(0, 6).map(agentEventView) };
+      }
+      await calendar.remove(matches[0].id);
+      await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
+      return { ok: true, deleted: agentEventView(matches[0]) };
+    },
+
+    async search_memory({ query = "", limit = 10 } = {}) {
+      const found = await memory.find(String(query || ""));
+      return {
+        ok: true,
+        memories: found.slice(0, Math.max(1, Math.min(20, Number(limit) || 10))).map((item) => ({
+          id: item.id,
+          key: item.key,
+          label: item.label,
+          value: item.value,
+          protected: Boolean(item.protected)
+        }))
+      };
+    },
+
+    async remember_fact({ label = "Informação", value = "" } = {}) {
+      if (!String(value).trim()) throw new Error("A memória ficou vazia.");
+      const item = await memory.remember({
+        key: `agent.fact.${Date.now()}`,
+        label: String(label || "Informação").trim(),
+        value: String(value).trim(),
+        type: "fact",
+        source: "agent-conversation"
+      });
+      await ui.renderMemory();
+      return { ok: true, memory: { id: item.id, label: item.label, value: item.value } };
+    },
+
+    async forget_memory({ query = "" } = {}) {
+      const found = await memory.find(String(query || ""));
+      if (!found.length) return { ok: false, error: "Não encontrei uma memória correspondente." };
+      if (found.length > 1) {
+        return { ok: false, needs_disambiguation: true, matches: found.slice(0, 6).map((item) => ({ id: item.id, label: item.label, value: item.value, protected: Boolean(item.protected) })) };
+      }
+      const removed = await memory.forget(found[0].key || found[0].id);
+      await ui.renderMemory();
+      return removed
+        ? { ok: true, forgotten: { label: found[0].label, value: found[0].value } }
+        : { ok: false, error: "Essa memória é protegida pelo núcleo da JORDAN." };
+    },
+
+    async read_messages({ unread_only = true, limit = 10 } = {}) {
+      const list = unread_only ? await messages.unread() : await messages.inbox({ includeSent: false });
+      const clipped = list.slice(0, Math.max(1, Math.min(20, Number(limit) || 10))).map((item) => ({
+        id: item.id,
+        from: item.senderName,
+        text: item.text,
+        createdAtMs: item.createdAtMs || null
+      }));
+      return { ok: true, count: list.length, messages: clipped };
+    },
+
+    async send_lineage_message({ recipient = "", text = "" } = {}) {
+      const sent = await messages.send(String(recipient || ""), String(text || ""));
+      await refreshMessagesView({ markSeen: false });
+      return { ok: true, message: { to: sent.recipientName, text: sent.text, id: sent.id } };
+    },
+
+    async open_app({ app = "" } = {}) {
+      const normalized = String(app || "").trim().toLowerCase().replace(/\s+/g, "");
+      const aliases = { googlemaps: "maps", mapa: "maps", mapas: "maps", email: "gmail", "e-mail": "gmail", whats: "whatsapp" };
+      const target = appLauncher.getTarget(aliases[normalized] || normalized);
+      if (!target) return { ok: false, error: `App/site não cadastrado: ${app}` };
+      const popup = window.open(target.url, "_blank", "noopener,noreferrer");
+      if (!popup) ui.addExternalLink(`ABRIR ${target.label}`, target.url, "APP / SITE");
+      return { ok: Boolean(popup), blocked: !popup, app: target.label, url: target.url };
+    },
+
+    async open_view({ view = "core" } = {}) {
+      const aliases = { calendario: "calendar", calendário: "calendar", memoria: "memory", memória: "memory", mensagens: "messages", sistema: "system", inicio: "core", início: "core" };
+      const target = aliases[String(view).toLowerCase()] || String(view).toLowerCase();
+      if (!document.querySelector(`[data-view="${target}"]`)) return { ok: false, error: `Tela inexistente: ${view}` };
+      ui.openView(target);
+      if (target === "messages") await refreshMessagesView({ markSeen: true });
+      return { ok: true, view: target };
+    },
+
+    async get_nearby_places({ category = "fuel", limit = 5 } = {}) {
+      const result = await locationService.nearest(String(category || "fuel"), { limit: Math.max(1, Math.min(8, Number(limit) || 5)) });
+      ui.addLocationLinks(result.places);
+      return {
+        ok: true,
+        category: result.label,
+        places: result.places.map((place) => ({ name: place.name, address: place.address, distance: place.distanceLabel, mapsUrl: place.mapsUrl }))
+      };
+    },
+
+    async get_directions({ destination = "" } = {}) {
+      const result = await locationService.directionsTo(String(destination || ""));
+      ui.renderRoute(result);
+      return { ok: true, destination: result.destination || destination, url: result.mapsUrl || result.url || null };
+    },
+
+    async legacy_jordan_capability({ instruction = "" } = {}) {
+      const result = await assistant.execute(String(instruction || ""), { source: "agent-tool", confidence: 1 });
+      await applyLegacyAgentAction(result);
+      return {
+        ok: result?.understood !== false,
+        text: result?.text || "",
+        action: result?.action || null,
+        source: result?.source || "legacy"
+      };
+    }
+  };
+}
+
 async function handleCommand(text, { fromVoice = false, speaker = null, recognitionMeta = {} } = {}) {
   registerInteraction();
 
@@ -1263,8 +1546,38 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
       return;
     }
 
-    const result = await assistant.execute(text, { source: fromVoice ? "voice" : "typed", confidence: fromVoice ? Number(recognitionMeta?.confidence || 0) : 1 });
-    ui.addMessage("JORDAN", result.text);
+    let result = null;
+
+    if (autonomousAgentEnabled) {
+      try {
+        ui.setStatus("JORDAN AGENT CORE · raciocinando...");
+        const context = await buildAgentContext();
+        result = await autonomousAgent.execute(text, {
+          context,
+          toolHandlers: createAgentToolHandlers(),
+          onToolCall: (call) => {
+            const toolLabel = String(call?.name || "AÇÃO").replace(/_/g, " ").toUpperCase();
+            ui.setStatus(`JORDAN AGENT CORE · ${toolLabel}`);
+          }
+        });
+      } catch (agentError) {
+        console.warn("JORDAN Agent Core fallback:", agentError);
+        const now = Date.now();
+        if (now - lastAgentFallbackNoticeAt > 60_000) {
+          lastAgentFallbackNoticeAt = now;
+          ui.setStatus("Agent Core indisponível · usando cérebro local");
+        }
+      }
+    }
+
+    if (!result) {
+      result = await assistant.execute(text, {
+        source: fromVoice ? "voice" : "typed",
+        confidence: fromVoice ? Number(recognitionMeta?.confidence || 0) : 1
+      });
+    }
+
+    ui.addMessage("JORDAN", result.text || "Pronto.");
 
     if (result.refreshAgenda) {
       await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);

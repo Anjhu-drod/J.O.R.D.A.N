@@ -107,7 +107,7 @@ export class JordanTTSService {
     emotion = "auto",
     volume = 1,
     tuning = {},
-    timeoutMs = 18_000,
+    timeoutMs = 90_000,
     onStart = null,
     onEnd = null
   } = {}) {

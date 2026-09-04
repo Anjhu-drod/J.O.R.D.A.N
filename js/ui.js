@@ -82,6 +82,10 @@ export class JordanUI {
       saveVoiceEndpointButton: document.querySelector("#saveVoiceEndpointButton"),
       checkVoiceCoreButton: document.querySelector("#checkVoiceCoreButton"),
       testVoiceButton: document.querySelector("#testVoiceButton"),
+      agentCoreStatus: document.querySelector("#agentCoreStatus"),
+      autonomousAgentToggle: document.querySelector("#autonomousAgentToggle"),
+      checkAgentCoreButton: document.querySelector("#checkAgentCoreButton"),
+      resetAgentConversationButton: document.querySelector("#resetAgentConversationButton"),
       offlineKnowledgeStatus: document.querySelector("#offlineKnowledgeStatus"),
       presenceStatus: document.querySelector("#presenceStatus"),
       voiceTuneSpeed: document.querySelector("#voiceTuneSpeed"),
@@ -319,14 +323,32 @@ export class JordanUI {
       const label = this.elements.neuralVoiceStatus.querySelector("b");
       if (label) {
         if (!enabled) label.textContent = "VOICE CORE DESATIVADO";
+        else if (ok && status.voice_ready === false && status.voice_auto_repair) label.textContent = "ONLINE · VOZ SERÁ RECONSTRUÍDA NA 1ª FALA";
         else if (ok) label.textContent = `ONLINE · ${status.voice || "JORDAN SPARK V1"}`;
-        else if (status.reason === "timeout") label.textContent = "SEM RESPOSTA · TEXTO ATIVO";
+        else if (status.reason === "timeout") label.textContent = "SEM RESPOSTA · CONTINGÊNCIA ATIVA";
         else label.textContent = "OFFLINE · TEXTO ATIVO";
       }
     }
     if (this.elements.speechSynthesisStatus) {
       this.elements.speechSynthesisStatus.textContent = ok ? "JORDAN Spark Neural V1" : "Voice Core offline";
     }
+  }
+
+  setAgentCoreStatus(status = {}) {
+    const target = this.elements.agentCoreStatus;
+    if (!target) return;
+    const enabled = status.enabled !== false;
+    const reachable = Boolean(status.ok);
+    const available = Boolean(status.available);
+    target.classList.toggle("online", reachable && available);
+    target.classList.toggle("offline", !reachable || !available);
+    const label = target.querySelector("b");
+    if (!label) return;
+    if (!enabled) label.textContent = "AGENT CORE DESATIVADO";
+    else if (status.reason === "checking") label.textContent = "VERIFICANDO AGENT CORE...";
+    else if (reachable && available) label.textContent = `ONLINE · ${status.model || "MODELO CONFIGURADO"}`;
+    else if (reachable) label.textContent = "CORE ONLINE · FALTA OPENAI_API_KEY";
+    else label.textContent = "AGENT CORE OFFLINE · CÉREBRO LOCAL ATIVO";
   }
 
   playCinematic(kind = "core", title = "JORDAN", subtitle = "Executando", duration = 760) {

@@ -14,6 +14,38 @@ import {
 } from "./jordanVoiceProfile.js";
 import { JordanTTSService, DEFAULT_JORDAN_TTS_ENDPOINT } from "./jordanTTSService.js";
 
+function splitNeuralSpeech(text = "", maxChars = 1350) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean || clean.length <= maxChars) return clean ? [clean] : [];
+
+  const sentences = clean.match(/[^.!?…]+[.!?…]+|[^.!?…]+$/g) || [clean];
+  const chunks = [];
+  let current = "";
+
+  const pushPiece = (piece) => {
+    const candidate = current ? `${current} ${piece}` : piece;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+      return;
+    }
+    if (current) chunks.push(current.trim());
+    current = "";
+
+    let rest = piece.trim();
+    while (rest.length > maxChars) {
+      let cut = rest.lastIndexOf(" ", maxChars);
+      if (cut < Math.floor(maxChars * 0.55)) cut = maxChars;
+      chunks.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut).trim();
+    }
+    current = rest;
+  };
+
+  for (const sentence of sentences) pushPiece(sentence.trim());
+  if (current) chunks.push(current.trim());
+  return chunks.filter(Boolean);
+}
+
 export class VoiceService {
   constructor({
     onTranscript,
@@ -61,7 +93,7 @@ export class VoiceService {
     this.neuralVoiceEnabled = true;
     // V0.9.2: não mascaramos falhas do Voice Core com uma voz diferente do aparelho.
     // A contingência do dispositivo é opcional e vem desligada por padrão.
-    this.deviceVoiceFallbackEnabled = false;
+    this.deviceVoiceFallbackEnabled = true;
     this.neuralTts = new JordanTTSService({
       endpoint: DEFAULT_JORDAN_TTS_ENDPOINT,
       enabled: true
@@ -80,7 +112,7 @@ export class VoiceService {
     this.synthesisSupported = this.neuralVoiceEnabled || (this.deviceVoiceFallbackEnabled && this.browserSynthesisSupported);
   }
 
-  setDeviceVoiceFallback(enabled = false) {
+  setDeviceVoiceFallback(enabled = true) {
     this.deviceVoiceFallbackEnabled = Boolean(enabled);
     this.synthesisSupported = this.neuralVoiceEnabled || (this.deviceVoiceFallbackEnabled && this.browserSynthesisSupported);
   }
@@ -455,13 +487,17 @@ export class VoiceService {
       try {
         const health = await this.neuralTts.health();
         if (health.ok && token === this.speechToken) {
-          await this.neuralTts.speak(this.currentSpeechText, {
-            emotion: this.moodToNeuralEmotion(mood, this.currentSpeechText),
-            volume,
-            tuning: this.sharedVoiceTuning,
-            onStart: () => this.onStatusChange("JORDAN VOICE CORE · falando..."),
-            onEnd: () => {}
-          });
+          const neuralChunks = splitNeuralSpeech(this.currentSpeechText);
+          for (const chunk of neuralChunks) {
+            if (token !== this.speechToken) return;
+            await this.neuralTts.speak(chunk, {
+              emotion: this.moodToNeuralEmotion(mood, chunk),
+              volume,
+              tuning: this.sharedVoiceTuning,
+              onStart: () => this.onStatusChange("JORDAN VOICE CORE · falando..."),
+              onEnd: () => {}
+            });
+          }
 
           if (token !== this.speechToken) return;
           this.stopBargeInRecognition();

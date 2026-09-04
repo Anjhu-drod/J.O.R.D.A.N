@@ -6,6 +6,8 @@ import soundfile as sf
 import librosa
 from scipy.signal import lfilter
 import torch
+from huggingface_hub import hf_hub_download
+from threading import Lock
 from kokoro import KPipeline
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,17 +19,71 @@ class JordanTTSEngine:
     def __init__(self):
         self.pipeline = KPipeline(lang_code="p")
         self._voice_cache = {}
+        self._build_lock = Lock()
+        self._base_voice_cache = {}
+
+    def _load_base_voice(self, name: str):
+        if name not in self._base_voice_cache:
+            voice_path = Path(hf_hub_download(
+                repo_id=RECIPE["base_repo"],
+                filename=f"voices/{name}.pt"
+            ))
+            self._base_voice_cache[name] = torch.load(
+                voice_path, map_location="cpu", weights_only=True
+            ).float()
+        return self._base_voice_cache[name]
+
+    def _build_voice(self, emotion: str, path: Path):
+        weights = RECIPE["emotion_mix"].get(emotion) or RECIPE["emotion_mix"]["neutral"]
+        total = sum(float(value) for value in weights.values())
+        if total <= 0:
+            raise ValueError("Voice recipe inválida: pesos zerados.")
+
+        mixed = None
+        for name, weight in weights.items():
+            weight = float(weight)
+            if weight <= 0:
+                continue
+            tensor = self._load_base_voice(name)
+            term = tensor * (weight / total)
+            mixed = term if mixed is None else mixed + term
+
+        if mixed is None:
+            raise RuntimeError("Não consegui construir a identidade vocal da JORDAN.")
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(mixed.contiguous(), path)
+        return mixed.contiguous()
 
     def _voice(self, emotion: str):
         emotion = emotion if emotion in RECIPE["emotion_mix"] else "neutral"
         if emotion not in self._voice_cache:
             path = ROOT/"model"/f"jordan_spark_v1_{emotion}.pt"
-            if not path.exists():
-                raise FileNotFoundError(
-                    f"{path.name} não existe. Execute scripts/build_voice.py primeiro."
-                )
-            self._voice_cache[emotion] = torch.load(path, map_location="cpu", weights_only=True).float()
+            with self._build_lock:
+                if emotion in self._voice_cache:
+                    return self._voice_cache[emotion]
+                if path.exists():
+                    voice = torch.load(path, map_location="cpu", weights_only=True).float()
+                else:
+                    # Auto-repair: o ZIP não precisa carregar os embeddings gerados.
+                    # Na primeira fala desta emoção, reconstruímos a JORDAN Spark
+                    # a partir da recipe e persistimos o resultado para os próximos usos.
+                    voice = self._build_voice(emotion, path)
+                self._voice_cache[emotion] = voice
         return self._voice_cache[emotion]
+
+    def status(self):
+        emotions = list(RECIPE["emotion_mix"].keys())
+        missing = [
+            emotion for emotion in emotions
+            if not (ROOT/"model"/f"jordan_spark_v1_{emotion}.pt").exists()
+        ]
+        return {
+            "ready": not missing,
+            "missing_emotions": missing,
+            "auto_repair": True,
+            "cached_emotions": sorted(self._voice_cache.keys()),
+        }
 
     @staticmethod
     def _clean(text: str) -> str:
