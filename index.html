@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#050000" />
+  <meta name="theme-color" content="#080914" />
   <meta name="description" content="JORDAN - assistente pessoal inteligente." />
   <title>JORDAN</title>
 
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.10.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.11.0" />
 </head>
-<body data-theme="crimson" class="auth-locked">
+<body data-theme="nova" class="auth-locked">
   <div class="fx-grid"></div>
   <div class="fx-vignette"></div>
   <div class="fx-scanlines"></div>
@@ -185,8 +185,12 @@
         <span>04</span>
         <b>MEM</b>
       </button>
-      <button class="rail-button" data-view-target="system" title="Sistema">
+      <button class="rail-button" data-view-target="games" title="Jogar xadrez com JORDAN">
         <span>05</span>
+        <b>GAME</b>
+      </button>
+      <button class="rail-button" data-view-target="system" title="Sistema">
+        <span>06</span>
         <b>SYS</b>
       </button>
     </aside>
@@ -428,6 +432,60 @@
         </div>
       </section>
 
+      <section id="view-games" class="view" data-view="games">
+        <div class="view-header chess-view-header">
+          <div>
+            <span class="hud-label">JORDAN ARENA / LOCAL GAME CORE</span>
+            <h2>Xadrez contra JORDAN</h2>
+            <p>Você joga contra o motor local da JORDAN. A partida funciona mesmo sem internet e o Agent Core também consegue consultar o tabuleiro.</p>
+          </div>
+          <div class="chess-header-chip"><i></i><span>JORDAN CHESS ENGINE</span></div>
+        </div>
+
+        <div class="chess-layout">
+          <article class="hud-panel chess-board-panel">
+            <div class="chess-board-head">
+              <div>
+                <span class="hud-label">BOARD MATRIX</span>
+                <strong id="chessTurnLabel">SUA VEZ · BRANCAS</strong>
+              </div>
+              <span id="chessCheckBadge" class="chess-check-badge hidden">CHECK</span>
+            </div>
+            <div id="chessBoard" class="chess-board" role="grid" aria-label="Tabuleiro de xadrez"></div>
+          </article>
+
+          <aside class="chess-side-stack">
+            <article class="hud-panel chess-status-panel">
+              <span class="hud-label">MATCH CORE</span>
+              <h3 id="chessStatusTitle">Partida pronta</h3>
+              <p id="chessStatusText">Você está com as brancas. Faça o primeiro lance.</p>
+              <div class="chess-vs">
+                <div><small>VOCÊ</small><strong>♔ WHITE</strong></div>
+                <span>VS</span>
+                <div><small>JORDAN</small><strong>♚ BLACK</strong></div>
+              </div>
+              <label class="chess-control-label">DIFICULDADE
+                <select id="chessDifficulty" class="system-input">
+                  <option value="easy">Relaxada</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="hard">JORDAN séria</option>
+                </select>
+              </label>
+              <div class="backup-actions chess-actions">
+                <button id="chessNewGameButton" class="hud-button small primary" type="button">NOVA PARTIDA</button>
+                <button id="chessUndoButton" class="hud-button small" type="button">DESFAZER</button>
+                <button id="chessFlipButton" class="hud-button small" type="button">GIRAR TABULEIRO</button>
+              </div>
+            </article>
+
+            <article class="hud-panel chess-log-panel">
+              <div class="panel-toolbar"><div><span class="hud-label">MOVE STREAM</span><h3>Histórico</h3></div><span id="chessMoveCount" class="hud-badge">0</span></div>
+              <div id="chessMoveLog" class="chess-move-log"><div class="empty-state">A partida ainda não começou.</div></div>
+            </article>
+          </aside>
+        </div>
+      </section>
+
       <section id="view-system" class="view" data-view="system">
         <div class="view-header">
           <div>
@@ -494,7 +552,7 @@
           </article>
           <article class="hud-panel system-card voice-card neural-voice-card">
             <span>JORDAN VOICE CORE</span>
-            <strong id="speechSynthesisStatus">JORDAN Spark Neural V1</strong>
+            <strong id="speechSynthesisStatus">JORDAN Spark Neural V2</strong>
             <div id="neuralVoiceStatus" class="voice-core-status"><i></i><b>VERIFICANDO VOICE SERVER...</b></div>
             <label class="hud-toggle compact"><input id="neuralVoiceToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR VOZ PRÓPRIA</b></label>
             <label class="hud-toggle compact"><input id="deviceVoiceFallbackToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>CONTINGÊNCIA DO DISPOSITIVO</b></label>
@@ -506,7 +564,7 @@
               <button id="checkVoiceCoreButton" class="hud-button small">TESTAR CONEXÃO</button>
               <button id="testVoiceButton" class="hud-button small primary">OUVIR JORDAN</button>
             </div>
-            <p class="system-description">JORDAN Spark continua sendo a voz oficial. Se o núcleo neural falhar, a contingência do dispositivo evita que ela fique muda. O servidor também reconstrói automaticamente embeddings de voz ausentes na primeira fala. Para manter a mesma Spark em todos os aparelhos, use o mesmo endpoint HTTPS do JORDAN Core.</p>
+            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Em AUTO, o JORDAN Core usa a voz neural cloud quando a API está disponível e cai para o núcleo local se houver falha; a contingência do dispositivo é a última rede de segurança para ela não ficar muda. Para manter a mesma Spark em todos os aparelhos, use o mesmo endpoint HTTPS do JORDAN Core.</p>
           </article>
           <article class="hud-panel system-card agent-core-card">
             <span>JORDAN AUTONOMOUS AGENT CORE</span>
@@ -531,7 +589,7 @@
           </article>
           <article class="hud-panel system-card creator-voice-lab" data-creator-only>
             <span>CREATOR VOICE LAB · GLOBAL</span>
-            <strong>JORDAN Spark · perfil compartilhado</strong>
+            <strong>JORDAN Spark V2 · perfil compartilhado</strong>
             <p class="system-description">Somente Jhuan altera. Os ajustes são salvos no Firestore e aplicados à voz de todos os dispositivos.</p>
             <div class="voice-tuning-grid">
               <label>VELOCIDADE <b id="voiceTuneSpeedValue">1.00x</b><input id="voiceTuneSpeed" type="range" min="0.80" max="1.35" step="0.01" value="1"></label>
@@ -608,6 +666,7 @@
             <span>VISUAL CORE</span>
             <strong>Tema da interface</strong>
             <select id="themeSelect" aria-label="Tema visual da JORDAN">
+              <option value="nova" selected>Nebula Core · V2</option>
               <option value="crimson">Crimson Core</option>
               <option value="eclipse">Eclipse</option>
               <option value="sakura">Sakura Protocol</option>
@@ -884,6 +943,13 @@
           <p>“Conte uma história qualquer.”</p>
         </section>
         <section>
+          <span>JORDAN ARENA · XADREZ</span>
+          <p>Abra GAME para jogar no tabuleiro.</p>
+          <p>“Jordan, vamos jogar xadrez.”</p>
+          <p>Você pode escolher Fácil, Normal ou Difícil.</p>
+          <p>A JORDAN calcula os próprios lances localmente.</p>
+        </section>
+        <section>
           <span>ENGLISH SYSTEM</span>
           <p>“Open the audio.” · “Turn off the audio.”</p>
           <p>“Open the player.” · “Open the lab.”</p>
@@ -903,7 +969,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.10.0";
+    const JORDAN_ASSET_VERSION = "0.11.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

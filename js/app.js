@@ -41,6 +41,8 @@ import { PresenceModeService } from "./presenceModeService.js";
 import { lineageVoiceConfigService, DEFAULT_SHARED_VOICE_TUNING } from "./lineageVoiceConfigService.js";
 import { MessageService } from "./messageService.js";
 import { AutonomousAgentService } from "./autonomousAgentService.js";
+import { JordanChessService, coordToSquare } from "./jordanChessService.js";
+import { safeCalculate } from "./mathService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -57,6 +59,7 @@ const semanticBrain = new SemanticBrainService({ memory, lineage: lineageService
 const presence = new PresenceModeService({ getSetting, setSetting });
 const messages = new MessageService(lineageService);
 const autonomousAgent = new AutonomousAgentService();
+const chess = new JordanChessService();
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
@@ -80,7 +83,7 @@ let voiceEnabled = true;
 let assistantVolume = 1;
 let languageMode = "pt";
 let internetEnabled = true;
-let theme = "crimson";
+let theme = "nova";
 let idleTimer = null;
 let lastInteractionAt = Date.now();
 let jordanInitialized = false;
@@ -100,6 +103,10 @@ let presenceTimer = null;
 let messagePollTimer = null;
 let autonomousAgentEnabled = true;
 let lastAgentFallbackNoticeAt = 0;
+let chessSelectedSquare = null;
+let chessLegalTargets = [];
+let chessFlipped = false;
+let chessThinking = false;
 
 const voice = new VoiceService({
   silenceMs: 2000,
@@ -329,7 +336,7 @@ async function initialize() {
     startupCloudValue("migração languageMode", () => setSetting("languageMode", "pt"), null);
   }
   internetEnabled = await startupCloudValue("internetEnabled", () => getSetting("internetEnabled", true), true);
-  theme = await startupCloudValue("theme", () => getSetting("theme", "crimson"), "crimson");
+  theme = await startupCloudValue("theme", () => getSetting("theme", "nova"), "nova");
   voiceIdentityEnabled = await startupCloudValue("voiceIdentityEnabled", () => getSetting("voiceIdentityEnabled", false), false);
   allowThirdPartyConversation = await startupCloudValue("allowThirdPartyConversation", () => getSetting("allowThirdPartyConversation", true), true);
   neuralVoiceEnabled = await startupCloudValue("neuralVoiceEnabled", () => getSetting("neuralVoiceEnabled", true), true);
@@ -361,6 +368,14 @@ async function initialize() {
   assistant.setResponseLanguage?.(languageMode);
   internet.setEnabled(internetEnabled);
   ui.setTheme(theme);
+
+  const savedChessState = await startupCloudValue("chess.localState", () => getSetting("chess.localState", null), null);
+  if (savedChessState) chess.load(savedChessState);
+  chessFlipped = chess.playerColor === "b";
+  renderChess();
+  if (chess.status === "playing" && chess.turn === chess.jordanColor) {
+    window.setTimeout(() => scheduleJordanChessMove().catch(console.warn), 450);
+  }
 
   if (ui.elements.languageModeSelect) ui.elements.languageModeSelect.value = languageMode;
   if (ui.elements.themeSelect) ui.elements.themeSelect.value = theme;
@@ -618,6 +633,7 @@ function bindEvents() {
       registerInteraction();
       ui.openView(button.dataset.viewTarget);
       if (button.dataset.viewTarget === "messages") refreshMessagesView({ markSeen: true }).catch(console.warn);
+      if (button.dataset.viewTarget === "games") renderChess();
     });
   });
 
@@ -770,6 +786,39 @@ function bindEvents() {
     ui.toast(`Tema visual: ${event.target.selectedOptions[0]?.textContent || theme}.`);
   });
 
+  ui.elements.chessDifficulty?.addEventListener("change", (event) => {
+    registerInteraction();
+    chess.setDifficulty(event.target.value);
+    persistChess();
+    renderChess();
+    ui.toast(`Xadrez: dificuldade ${event.target.selectedOptions[0]?.textContent || event.target.value}.`, "JORDAN ARENA");
+  });
+
+  ui.elements.chessNewGameButton?.addEventListener("click", async () => {
+    registerInteraction();
+    await startChessGame({ difficulty: ui.elements.chessDifficulty?.value || chess.difficulty, playerColor: "w", open: true });
+    ui.toast("Nova partida iniciada. Você joga com as brancas.", "JORDAN ARENA");
+  });
+
+  ui.elements.chessUndoButton?.addEventListener("click", () => {
+    registerInteraction();
+    if (chessThinking) return;
+    const state = chess.publicState();
+    const plies = state.turn === state.playerColor ? 2 : 1;
+    if (chess.undo(plies)) {
+      chessSelectedSquare = null;
+      chessLegalTargets = [];
+      persistChess();
+      renderChess();
+    }
+  });
+
+  ui.elements.chessFlipButton?.addEventListener("click", () => {
+    registerInteraction();
+    chessFlipped = !chessFlipped;
+    renderChess();
+  });
+
   document.querySelectorAll("[data-companion-target]").forEach((button) => {
     button.addEventListener("click", () => ui.openCompanion(button.dataset.companionTarget));
   });
@@ -831,11 +880,11 @@ function bindEvents() {
   ui.elements.checkAgentCoreButton?.addEventListener("click", async () => {
     registerInteraction();
     ui.setAgentCoreStatus?.({ ok: false, enabled: autonomousAgentEnabled, reason: "checking" });
-    const health = await autonomousAgent.health({ force: true });
+    const health = await autonomousAgent.diagnose();
     ui.setAgentCoreStatus?.({ ...health, enabled: autonomousAgentEnabled });
-    ui.toast(health.available
-      ? `Agent Core online · ${health.model || "modelo configurado"}.`
-      : (health.ok ? "JORDAN Core respondeu, mas falta configurar OPENAI_API_KEY no servidor." : "Agent Core não respondeu."), "JORDAN AGENT");
+    ui.toast(health.ok
+      ? `Agent Core respondeu de verdade · ${health.model || "modelo configurado"}.`
+      : (health.reachable ? `Core local respondeu, mas a IA falhou: ${health.reason || "verifique a chave/modelo"}` : "Agent Core não respondeu."), "JORDAN AGENT", 8000);
   });
 
   ui.elements.musicDefaultSource?.addEventListener("change", async (event) => {
@@ -861,7 +910,7 @@ function bindEvents() {
     ui.setNeuralVoiceStatus({ ok: false, enabled: neuralVoiceEnabled, reason: "checking" });
     const health = await voice.neuralVoiceHealth({ force: true });
     ui.setNeuralVoiceStatus({ ...health, enabled: neuralVoiceEnabled });
-    ui.toast(health.ok ? "JORDAN Spark Neural V1 está respondendo." : "Voice Server não respondeu. A voz do dispositivo continuará como fallback.", "JORDAN VOICE");
+    ui.toast(health.ok ? `JORDAN Spark V2 está respondendo${health.voice_provider ? ` · ${String(health.voice_provider).toUpperCase()}` : ""}.` : "Voice Server não respondeu. A voz do dispositivo continuará como fallback.", "JORDAN VOICE");
   });
 
   ui.elements.testVoiceButton.addEventListener("click", async () => {
@@ -1189,6 +1238,215 @@ async function buildMorningBriefing() {
 }
 
 
+
+const CHESS_GLYPHS = Object.freeze({
+  wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
+  bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟"
+});
+
+function chessColorLabel(color) {
+  return color === "w" ? "BRANCAS" : "PRETAS";
+}
+
+function chessStatusCopy(state) {
+  if (state.status === "checkmate") {
+    const userWon = state.winner === state.playerColor;
+    return userWon
+      ? { title: "Xeque-mate! Você venceu.", text: "Boa. Você fechou a posição antes da JORDAN conseguir escapar." }
+      : { title: "Xeque-mate · JORDAN venceu", text: "Fim de jogo. Pode pedir revanche quando quiser." };
+  }
+  if (state.status === "stalemate") return { title: "Empate por afogamento", text: "Não existem lances legais, mas o rei não está em xeque." };
+  if (state.status === "draw-50") return { title: "Empate · regra dos 50 lances", text: "A partida terminou sem captura nem movimento de peão por tempo suficiente." };
+  if (chessThinking) return { title: "JORDAN está pensando...", text: "O motor local está avaliando a posição e escolhendo o próximo lance." };
+  if (state.turn === state.playerColor) {
+    return state.check
+      ? { title: "Sua vez · você está em xeque", text: "Proteja o rei. As casas marcadas são lances legais para a peça selecionada." }
+      : { title: "Sua vez", text: "Clique em uma peça e depois em uma das casas marcadas." };
+  }
+  return { title: "Vez da JORDAN", text: "A JORDAN está pronta para responder ao seu último lance." };
+}
+
+function renderChess() {
+  const boardEl = ui.elements.chessBoard;
+  if (!boardEl) return;
+  const state = chess.publicState();
+  const copy = chessStatusCopy(state);
+
+  if (ui.elements.chessStatusTitle) ui.elements.chessStatusTitle.textContent = copy.title;
+  if (ui.elements.chessStatusText) ui.elements.chessStatusText.textContent = copy.text;
+  if (ui.elements.chessTurnLabel) {
+    const owner = state.turn === state.playerColor ? "SUA VEZ" : "JORDAN";
+    ui.elements.chessTurnLabel.textContent = `${owner} · ${chessColorLabel(state.turn)}`;
+  }
+  if (ui.elements.chessCheckBadge) {
+    ui.elements.chessCheckBadge.classList.toggle("hidden", !state.check);
+    ui.elements.chessCheckBadge.textContent = state.check ? "CHECK" : "";
+  }
+  if (ui.elements.chessDifficulty) ui.elements.chessDifficulty.value = state.difficulty;
+
+  const vsStrong = document.querySelectorAll(".chess-vs strong");
+  if (vsStrong[0]) vsStrong[0].textContent = `${CHESS_GLYPHS[`${state.playerColor}K`]} ${state.playerColor === "w" ? "WHITE" : "BLACK"}`;
+  if (vsStrong[1]) vsStrong[1].textContent = `${CHESS_GLYPHS[`${state.jordanColor}K`]} ${state.jordanColor === "w" ? "WHITE" : "BLACK"}`;
+
+  boardEl.innerHTML = "";
+  const rows = chessFlipped ? [...Array(8).keys()].reverse() : [...Array(8).keys()];
+  const cols = chessFlipped ? [...Array(8).keys()].reverse() : [...Array(8).keys()];
+  const last = state.lastMove;
+
+  rows.forEach((row, displayRow) => {
+    cols.forEach((col, displayCol) => {
+      const squareName = coordToSquare(row, col);
+      const piece = state.board[row][col];
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `chess-square ${(row + col) % 2 ? "dark" : "light"}`;
+      button.dataset.square = squareName;
+      button.setAttribute("role", "gridcell");
+      button.setAttribute("aria-label", piece ? `${squareName} ${piece}` : squareName);
+
+      if (squareName === chessSelectedSquare) button.classList.add("selected");
+      const legal = chessLegalTargets.find((move) => move.to === squareName);
+      if (legal) button.classList.add(legal.captured || legal.enPassant ? "legal-capture" : "legal-target");
+      if (last && (last.from === squareName || last.to === squareName)) button.classList.add("last-move");
+      if (state.check && piece === `${state.turn}K`) button.classList.add("king-check");
+
+      if (piece) {
+        const span = document.createElement("span");
+        span.className = `chess-piece ${piece[0] === "w" ? "white" : "black"}`;
+        span.textContent = CHESS_GLYPHS[piece] || "?";
+        button.appendChild(span);
+      }
+
+      if (displayRow === 7) {
+        const file = document.createElement("span");
+        file.className = "chess-square-coordinate file";
+        file.textContent = squareName[0];
+        button.appendChild(file);
+      }
+      if (displayCol === 0) {
+        const rank = document.createElement("span");
+        rank.className = "chess-square-coordinate rank";
+        rank.textContent = squareName[1];
+        button.appendChild(rank);
+      }
+
+      button.addEventListener("click", () => handleChessSquareClick(squareName));
+      boardEl.appendChild(button);
+    });
+  });
+
+  const logEl = ui.elements.chessMoveLog;
+  if (logEl) {
+    logEl.innerHTML = "";
+    if (!state.moveLog.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "A partida ainda não começou.";
+      logEl.appendChild(empty);
+    } else {
+      for (let index = 0; index < state.moveLog.length; index += 2) {
+        const white = state.moveLog[index];
+        const black = state.moveLog[index + 1];
+        const row = document.createElement("div");
+        row.className = "chess-move-row";
+        const number = document.createElement("b");
+        number.textContent = `${Math.floor(index / 2) + 1}.`;
+        const w = document.createElement("span");
+        w.textContent = white?.notation || "—";
+        const b = document.createElement("span");
+        b.textContent = black?.notation || "…";
+        row.append(number, w, b);
+        logEl.appendChild(row);
+      }
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+  if (ui.elements.chessMoveCount) ui.elements.chessMoveCount.textContent = String(state.moveLog.length);
+  if (ui.elements.chessUndoButton) ui.elements.chessUndoButton.disabled = chessThinking || !chess.canUndo();
+}
+
+function persistChess() {
+  setSetting("chess.localState", chess.serialize()).catch((error) => console.warn("JORDAN Chess save:", error));
+}
+
+async function scheduleJordanChessMove({ immediate = false } = {}) {
+  if (chessThinking || chess.status !== "playing" || chess.turn !== chess.jordanColor) return null;
+  chessThinking = true;
+  chessSelectedSquare = null;
+  chessLegalTargets = [];
+  renderChess();
+
+  if (!immediate) await new Promise((resolve) => setTimeout(resolve, 260));
+  let result = null;
+  try {
+    result = chess.playJordanMove({ difficulty: chess.difficulty });
+    persistChess();
+  } finally {
+    chessThinking = false;
+    renderChess();
+  }
+  return result;
+}
+
+async function handleChessSquareClick(square) {
+  registerInteraction();
+  const state = chess.publicState();
+  if (chessThinking || state.status !== "playing" || state.turn !== state.playerColor) return;
+
+  const piece = chess.pieceAt(square);
+  if (chessSelectedSquare) {
+    const target = chessLegalTargets.find((move) => move.to === square);
+    if (target) {
+      const result = chess.move(chessSelectedSquare, square, target.promotion || "Q");
+      chessSelectedSquare = null;
+      chessLegalTargets = [];
+      persistChess();
+      renderChess();
+      if (result.ok && chess.status === "playing") await scheduleJordanChessMove();
+      return;
+    }
+  }
+
+  if (piece && piece[0] === state.playerColor) {
+    chessSelectedSquare = square;
+    chessLegalTargets = chess.legalMovesFrom(square);
+  } else {
+    chessSelectedSquare = null;
+    chessLegalTargets = [];
+  }
+  renderChess();
+}
+
+async function startChessGame({ difficulty = "normal", playerColor = "w", open = true } = {}) {
+  chess.setDifficulty(difficulty);
+  chess.reset({ difficulty, playerColor });
+  chessSelectedSquare = null;
+  chessLegalTargets = [];
+  chessFlipped = playerColor === "b";
+  persistChess();
+  renderChess();
+  if (open) ui.openView("games");
+  let jordanMove = null;
+  if (chess.turn === chess.jordanColor) jordanMove = await scheduleJordanChessMove({ immediate: true });
+  return { state: chess.publicState(), jordanMove };
+}
+
+function chessAgentState() {
+  const state = chess.publicState();
+  return {
+    status: state.status,
+    winner: state.winner,
+    turn: state.turn,
+    player_color: state.playerColor,
+    jordan_color: state.jordanColor,
+    difficulty: state.difficulty,
+    check: state.check,
+    fen: state.fen,
+    last_move: state.lastMove,
+    move_count: state.moveLog.length
+  };
+}
+
 function agentEventView(event) {
   if (!event) return null;
   return {
@@ -1220,13 +1478,15 @@ async function buildAgentContext() {
       id: identity.id,
       firstName: identity.firstName,
       confirmationName: identity.confirmationName || identity.firstName,
+      fullName: [identity.firstName, identity.confirmationName].filter(Boolean).join(" ").trim(),
       isCreator: Boolean(lineageService.isCreator)
     } : null,
     personality: assistant.getPersonality()?.id || "extroverted",
     memories: facts.map((item) => ({ label: item.label, value: item.value })),
     upcomingEvents: upcoming.map(agentEventView),
     unreadMessages: unreadCount,
-    availableApps: appLauncher.listTargets().map((item) => item.id)
+    availableApps: appLauncher.listTargets().map((item) => item.id),
+    chess: chessAgentState()
   };
 }
 
@@ -1385,7 +1645,7 @@ function createAgentToolHandlers() {
     },
 
     async open_view({ view = "core" } = {}) {
-      const aliases = { calendario: "calendar", calendário: "calendar", memoria: "memory", memória: "memory", mensagens: "messages", sistema: "system", inicio: "core", início: "core" };
+      const aliases = { calendario: "calendar", calendário: "calendar", memoria: "memory", memória: "memory", mensagens: "messages", sistema: "system", xadrez: "games", jogo: "games", jogos: "games", chess: "games", inicio: "core", início: "core" };
       const target = aliases[String(view).toLowerCase()] || String(view).toLowerCase();
       if (!document.querySelector(`[data-view="${target}"]`)) return { ok: false, error: `Tela inexistente: ${view}` };
       ui.openView(target);
@@ -1407,6 +1667,73 @@ function createAgentToolHandlers() {
       const result = await locationService.directionsTo(String(destination || ""));
       ui.renderRoute(result);
       return { ok: true, destination: result.destination || destination, url: result.mapsUrl || result.url || null };
+    },
+
+    async get_current_location({ detail = "coarse" } = {}) {
+      const result = await locationService.currentLocationInfo({ detail: detail === "address" ? "address" : "coarse" });
+      if (ui.elements.locationStatus) ui.elements.locationStatus.textContent = `${result.label} · precisão ~${Math.round(result.accuracy || 0)} m`;
+      return {
+        ok: true,
+        label: result.label,
+        city: result.place?.city || null,
+        state: result.place?.state || null,
+        country: result.place?.country || null,
+        neighbourhood: detail === "address" ? (result.place?.neighbourhood || null) : null,
+        road: detail === "address" ? (result.place?.road || null) : null,
+        latitude: result.lat,
+        longitude: result.lon,
+        accuracy_m: result.accuracy
+      };
+    },
+
+    async calculate({ expression = "" } = {}) {
+      const calculated = safeCalculate(String(expression || ""));
+      return { ok: true, expression: calculated.expression, result: calculated.value };
+    },
+
+    async get_chess_state() {
+      return { ok: true, ...chessAgentState() };
+    },
+
+    async start_chess_game({ difficulty = "normal", player_color = "white" } = {}) {
+      const playerColor = String(player_color).toLowerCase() === "black" ? "b" : "w";
+      const started = await startChessGame({ difficulty, playerColor, open: true });
+      return {
+        ok: true,
+        message: `Nova partida iniciada. Usuário: ${chessColorLabel(playerColor)}.`,
+        jordan_opening_move: started.jordanMove?.move || null,
+        state: chessAgentState()
+      };
+    },
+
+    async play_chess_move({ from = "", to = "", promotion = "Q" } = {}) {
+      const before = chess.publicState();
+      if (before.status !== "playing") return { ok: false, error: "A partida já terminou.", state: chessAgentState() };
+      if (before.turn !== before.playerColor) return { ok: false, error: "Agora é a vez da JORDAN.", state: chessAgentState() };
+      const userMove = chess.move(String(from).toLowerCase(), String(to).toLowerCase(), promotion);
+      if (!userMove.ok) return { ...userMove, state: chessAgentState() };
+      persistChess();
+      renderChess();
+      let jordanMove = null;
+      if (chess.status === "playing") jordanMove = await scheduleJordanChessMove({ immediate: true });
+      ui.openView("games");
+      return {
+        ok: true,
+        user_move: userMove.move,
+        jordan_move: jordanMove?.move || null,
+        state: chessAgentState()
+      };
+    },
+
+    async undo_chess_move() {
+      if (chessThinking) return { ok: false, error: "A JORDAN ainda está calculando o lance." };
+      const state = chess.publicState();
+      const plies = state.turn === state.playerColor ? 2 : 1;
+      const ok = chess.undo(plies);
+      chessSelectedSquare = null;
+      chessLegalTargets = [];
+      if (ok) { persistChess(); renderChess(); ui.openView("games"); }
+      return { ok, state: chessAgentState(), error: ok ? null : "Não há lances para desfazer." };
     },
 
     async legacy_jordan_capability({ instruction = "" } = {}) {
@@ -1547,6 +1874,7 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     }
 
     let result = null;
+    let agentFailure = null;
 
     if (autonomousAgentEnabled) {
       try {
@@ -1561,6 +1889,7 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
           }
         });
       } catch (agentError) {
+        agentFailure = agentError;
         console.warn("JORDAN Agent Core fallback:", agentError);
         const now = Date.now();
         if (now - lastAgentFallbackNoticeAt > 60_000) {
@@ -1575,6 +1904,30 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
         source: fromVoice ? "voice" : "typed",
         confidence: fromVoice ? Number(recognitionMeta?.confidence || 0) : 1
       });
+
+      // O antigo fallback de conversa devolvia “Compreendi...” para praticamente
+      // qualquer pergunta que não tivesse um handler. Isso escondia o defeito
+      // real (Agent Core offline/sem chave) e fazia a JORDAN parecer burra.
+      // Mantemos os módulos locais úteis, mas nunca mascaramos uma pergunta
+      // aberta com aquela resposta genérica.
+      if (agentFailure && result?.understood === false) {
+        const health = autonomousAgent.lastHealth || {};
+        const rawReason = String(health.reason || agentFailure?.message || "Agent Core indisponível").trim();
+        const reason = rawReason === "unreachable"
+          ? "não consegui alcançar o JORDAN Core"
+          : rawReason === "timeout"
+            ? "o JORDAN Core demorou demais para responder"
+            : rawReason;
+        const textFallback = `Meu cérebro autônomo não entrou nesta resposta porque ${reason}. Eu não vou fingir que entendi com uma frase pronta. Abra SYS → TESTAR AGENT CORE para ver o diagnóstico. Minhas funções locais, voz, calendário e xadrez continuam disponíveis.`;
+        result = {
+          ...result,
+          text: textFallback,
+          speak: textFallback,
+          mood: "serious",
+          source: "agent-diagnostic",
+          understood: true
+        };
+      }
     }
 
     ui.addMessage("JORDAN", result.text || "Pronto.");

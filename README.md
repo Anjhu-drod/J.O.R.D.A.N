@@ -1,11 +1,18 @@
-# JORDAN V0.9.2 — REASONING REPAIR / MESSAGES / VOICE RELIABILITY
+# JORDAN V0.11 — NEBULA / AUTONOMOUS CORE / SPARK V2 / CHESS
 
 Projeto acumulado até a V0.9.2. Para atualização incremental, aplique o patch V0.9.2 sobre a V0.9.1.
 
 ## Destaques
 
+- Agent Core corrigido para não mascarar falhas com respostas genéricas; diagnóstico agora testa uma chamada real do modelo.
+- Novas ferramentas autônomas para localização atual, cálculo e JORDAN Arena.
+- JORDAN Spark V2: nova direção vocal original, cloud neural com fallback local e contingência do dispositivo.
+- Novo tema padrão `Nebula Core · V2`.
+- Nova aba `GAME` com xadrez local completo contra a JORDAN, três dificuldades, undo e tabuleiro persistente.
+- Cache PWA: `jordan-v0.11.0`.
+
 - JORDAN Spark Neural V1 integrada como voz principal.
-- `speechSynthesis` virou fallback, não mais a identidade principal.
+- JORDAN Spark Neural V1 é a identidade de voz principal; a voz do dispositivo só é usada se a contingência manual estiver ativada.
 - Voice Server Python/FastAPI incluído em `voice_server/`.
 - Endpoint do Voice Core configurável por dispositivo em SYS.
 - Mesma Firebase JORDAN ID em vários dispositivos simultaneamente.
@@ -19,7 +26,7 @@ Projeto acumulado até a V0.9.2. Para atualização incremental, aplique o patch
 
 ## Firebase
 
-**Publique o novo `firestore.rules` desta V0.9.** Sem isso, o mapa multidispositivo `userIdentityClaims` será negado pelo Firestore.
+**Publique o `firestore.rules` desta V0.9.2.** Sem isso, mensagens, configurações globais e o mapa multidispositivo `userIdentityClaims` podem ser negados pelo Firestore.
 
 ## Voice Core
 
@@ -37,7 +44,7 @@ No celular use um endpoint HTTPS acessível pelo celular. A URL não é sincroni
 
 ## Atualização
 
-O Service Worker desta versão usa cache `jordan-v0.9.0`.
+O Service Worker desta versão usa cache `jordan-v0.9.2`. Depois de atualizar no GitHub Pages, faça uma recarga forte no PC e reabra completamente a PWA no celular para descartar caches antigos.
 
 ## V0.9.1 — Semantic + Offline + Presence Core
 

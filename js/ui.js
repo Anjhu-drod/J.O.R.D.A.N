@@ -119,6 +119,18 @@ export class JordanUI {
       themeSelect: document.querySelector("#themeSelect"),
       systemCommandList: document.querySelector("#systemCommandList"),
 
+      chessBoard: document.querySelector("#chessBoard"),
+      chessTurnLabel: document.querySelector("#chessTurnLabel"),
+      chessCheckBadge: document.querySelector("#chessCheckBadge"),
+      chessStatusTitle: document.querySelector("#chessStatusTitle"),
+      chessStatusText: document.querySelector("#chessStatusText"),
+      chessDifficulty: document.querySelector("#chessDifficulty"),
+      chessNewGameButton: document.querySelector("#chessNewGameButton"),
+      chessUndoButton: document.querySelector("#chessUndoButton"),
+      chessFlipButton: document.querySelector("#chessFlipButton"),
+      chessMoveLog: document.querySelector("#chessMoveLog"),
+      chessMoveCount: document.querySelector("#chessMoveCount"),
+
       authGate: document.querySelector("#authGate"),
       authConnectionBadge: document.querySelector("#authConnectionBadge"),
       authStageTitle: document.querySelector("#authStageTitle"),
@@ -323,14 +335,17 @@ export class JordanUI {
       const label = this.elements.neuralVoiceStatus.querySelector("b");
       if (label) {
         if (!enabled) label.textContent = "VOICE CORE DESATIVADO";
-        else if (ok && status.voice_ready === false && status.voice_auto_repair) label.textContent = "ONLINE · VOZ SERÁ RECONSTRUÍDA NA 1ª FALA";
-        else if (ok) label.textContent = `ONLINE · ${status.voice || "JORDAN SPARK V1"}`;
+        else if (ok && status.voice_ready === false && status.voice_auto_repair) label.textContent = "ONLINE · VOZ LOCAL SERÁ RECONSTRUÍDA NA 1ª FALA";
+        else if (ok && status.voice_ready === false) label.textContent = "CORE ONLINE · VOZ INDISPONÍVEL";
+        else if (ok) label.textContent = `ONLINE · ${status.voice || "JORDAN SPARK V2"}${status.voice_provider ? ` · ${String(status.voice_provider).toUpperCase()}` : ""}`;
         else if (status.reason === "timeout") label.textContent = "SEM RESPOSTA · CONTINGÊNCIA ATIVA";
         else label.textContent = "OFFLINE · TEXTO ATIVO";
       }
     }
     if (this.elements.speechSynthesisStatus) {
-      this.elements.speechSynthesisStatus.textContent = ok ? "JORDAN Spark Neural V1" : "Voice Core offline";
+      if (ok && status.voice_ready !== false) this.elements.speechSynthesisStatus.textContent = "JORDAN Spark Neural V2";
+      else if (ok) this.elements.speechSynthesisStatus.textContent = "Voice Core online · síntese indisponível";
+      else this.elements.speechSynthesisStatus.textContent = "Voice Core offline";
     }
   }
 
@@ -338,17 +353,18 @@ export class JordanUI {
     const target = this.elements.agentCoreStatus;
     if (!target) return;
     const enabled = status.enabled !== false;
-    const reachable = Boolean(status.ok);
     const available = Boolean(status.available);
-    target.classList.toggle("online", reachable && available);
-    target.classList.toggle("offline", !reachable || !available);
+    const reachable = status.reachable ?? Boolean(status.ok || status.httpOk);
+    target.classList.toggle("online", enabled && reachable && available);
+    target.classList.toggle("offline", !enabled || !reachable || !available);
     const label = target.querySelector("b");
     if (!label) return;
     if (!enabled) label.textContent = "AGENT CORE DESATIVADO";
     else if (status.reason === "checking") label.textContent = "VERIFICANDO AGENT CORE...";
     else if (reachable && available) label.textContent = `ONLINE · ${status.model || "MODELO CONFIGURADO"}`;
-    else if (reachable) label.textContent = "CORE ONLINE · FALTA OPENAI_API_KEY";
-    else label.textContent = "AGENT CORE OFFLINE · CÉREBRO LOCAL ATIVO";
+    else if (reachable && status.reason) label.textContent = `CORE ONLINE · ${String(status.reason).slice(0, 52).toUpperCase()}`;
+    else if (reachable) label.textContent = "CORE ONLINE · AGENTE NÃO CONFIGURADO";
+    else label.textContent = "AGENT CORE OFFLINE · FUNÇÕES LOCAIS ATIVAS";
   }
 
   playCinematic(kind = "core", title = "JORDAN", subtitle = "Executando", duration = 760) {
@@ -736,9 +752,9 @@ export class JordanUI {
     this.elements.conversation.scrollTop = this.elements.conversation.scrollHeight;
   }
 
-  setTheme(theme = "crimson") {
-    const allowed = ["crimson", "eclipse", "sakura", "cursed", "shinobi"];
-    const selected = allowed.includes(theme) ? theme : "crimson";
+  setTheme(theme = "nova") {
+    const allowed = ["nova", "crimson", "eclipse", "sakura", "cursed", "shinobi"];
+    const selected = allowed.includes(theme) ? theme : "nova";
     document.body.dataset.theme = selected;
     if (this.elements.themeSelect) this.elements.themeSelect.value = selected;
   }

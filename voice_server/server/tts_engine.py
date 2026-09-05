@@ -1,29 +1,108 @@
 from __future__ import annotations
+
 from pathlib import Path
-import io, json, re
-import numpy as np
-import soundfile as sf
-import librosa
-from scipy.signal import lfilter
-import torch
-from huggingface_hub import hf_hub_download
 from threading import Lock
-from kokoro import KPipeline
+import io
+import json
+import os
+import re
+from typing import Any
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+try:
+    import numpy as np
+    import soundfile as sf
+    import librosa
+    from scipy.signal import lfilter
+    import torch
+    from huggingface_hub import hf_hub_download
+    from kokoro import KPipeline
+    LOCAL_DEPS_OK = True
+except Exception:
+    np = None
+    sf = None
+    librosa = None
+    lfilter = None
+    torch = None
+    hf_hub_download = None
+    KPipeline = None
+    LOCAL_DEPS_OK = False
 
 ROOT = Path(__file__).resolve().parents[1]
-RECIPE = json.loads((ROOT/"config"/"voice_recipe.json").read_text(encoding="utf-8"))
-PRON = json.loads((ROOT/"config"/"pronunciation.json").read_text(encoding="utf-8"))
+load_dotenv(ROOT / ".env")
+RECIPE = json.loads((ROOT / "config" / "voice_recipe.json").read_text(encoding="utf-8"))
+PRON = json.loads((ROOT / "config" / "pronunciation.json").read_text(encoding="utf-8"))
 SR = int(RECIPE["sample_rate"])
 
+
 class JordanTTSEngine:
+    """JORDAN Spark V2.
+
+    A identidade vocal é original. Em modo ``auto`` o Core usa o TTS neural da
+    OpenAI quando a mesma OPENAI_API_KEY do Agent Core estiver configurada e
+    mantém o Kokoro local como contingência. Se a nuvem falhar, a voz local
+    assume a fala em vez de deixar a JORDAN muda.
+    """
+
     def __init__(self):
-        self.pipeline = KPipeline(lang_code="p")
-        self._voice_cache = {}
+        self.provider_mode = str(os.getenv("JORDAN_TTS_PROVIDER", "auto") or "auto").strip().lower()
+        if self.provider_mode not in {"auto", "openai", "local"}:
+            self.provider_mode = "auto"
+        self.cloud_model = os.getenv("JORDAN_TTS_MODEL", RECIPE.get("cloud", {}).get("model", "gpt-4o-mini-tts"))
+        self.cloud_voice = os.getenv("JORDAN_TTS_VOICE", RECIPE.get("cloud", {}).get("voice", "coral"))
+        self._openai_client = None
+        self.pipeline = None
+        self._voice_cache: dict[str, Any] = {}
         self._build_lock = Lock()
-        self._base_voice_cache = {}
+        self._base_voice_cache: dict[str, Any] = {}
+        self.last_provider = None
+        self.last_error = None
+
+    @property
+    def cloud_available(self) -> bool:
+        return bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None
+
+    @property
+    def local_available(self) -> bool:
+        return bool(LOCAL_DEPS_OK and KPipeline is not None)
+
+    @property
+    def selected_provider(self) -> str:
+        if self.provider_mode == "openai":
+            return "openai"
+        if self.provider_mode == "local":
+            return "local"
+        return "openai" if self.cloud_available else "local"
+
+    @property
+    def openai_client(self):
+        if not self.cloud_available:
+            raise RuntimeError("OPENAI_API_KEY não configurada para o JORDAN Spark V2 Cloud.")
+        if self._openai_client is None:
+            self._openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        return self._openai_client
+
+    def _ensure_local_pipeline(self):
+        if not self.local_available:
+            raise RuntimeError("Dependências do JORDAN Spark Local não estão disponíveis. Rode SETUP_WINDOWS.bat.")
+        if self.pipeline is None:
+            self.pipeline = KPipeline(lang_code="p")
+        return self.pipeline
 
     def _load_base_voice(self, name: str):
         if name not in self._base_voice_cache:
+            if not self.local_available:
+                raise RuntimeError("Voice Core local indisponível.")
             voice_path = Path(hf_hub_download(
                 repo_id=RECIPE["base_repo"],
                 filename=f"voices/{name}.pt"
@@ -49,7 +128,7 @@ class JordanTTSEngine:
             mixed = term if mixed is None else mixed + term
 
         if mixed is None:
-            raise RuntimeError("Não consegui construir a identidade vocal da JORDAN.")
+            raise RuntimeError("Não consegui construir a identidade vocal local da JORDAN.")
 
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(mixed.contiguous(), path)
@@ -58,16 +137,13 @@ class JordanTTSEngine:
     def _voice(self, emotion: str):
         emotion = emotion if emotion in RECIPE["emotion_mix"] else "neutral"
         if emotion not in self._voice_cache:
-            path = ROOT/"model"/f"jordan_spark_v1_{emotion}.pt"
+            path = ROOT / "model" / f"jordan_spark_v2_{emotion}.pt"
             with self._build_lock:
                 if emotion in self._voice_cache:
                     return self._voice_cache[emotion]
                 if path.exists():
                     voice = torch.load(path, map_location="cpu", weights_only=True).float()
                 else:
-                    # Auto-repair: o ZIP não precisa carregar os embeddings gerados.
-                    # Na primeira fala desta emoção, reconstruímos a JORDAN Spark
-                    # a partir da recipe e persistimos o resultado para os próximos usos.
                     voice = self._build_voice(emotion, path)
                 self._voice_cache[emotion] = voice
         return self._voice_cache[emotion]
@@ -76,13 +152,24 @@ class JordanTTSEngine:
         emotions = list(RECIPE["emotion_mix"].keys())
         missing = [
             emotion for emotion in emotions
-            if not (ROOT/"model"/f"jordan_spark_v1_{emotion}.pt").exists()
+            if not (ROOT / "model" / f"jordan_spark_v2_{emotion}.pt").exists()
         ]
+        selected = self.selected_provider
+        ready = self.cloud_available or self.local_available
         return {
-            "ready": not missing,
+            "ready": bool(ready),
+            "name": RECIPE.get("name", "JORDAN Spark V2"),
+            "provider_mode": self.provider_mode,
+            "provider": selected,
+            "cloud_available": self.cloud_available,
+            "local_available": self.local_available,
+            "cloud_model": self.cloud_model,
+            "cloud_voice": self.cloud_voice,
             "missing_emotions": missing,
-            "auto_repair": True,
+            "auto_repair": self.local_available,
             "cached_emotions": sorted(self._voice_cache.keys()),
+            "last_provider": self.last_provider,
+            "last_error": self.last_error,
         }
 
     @staticmethod
@@ -110,20 +197,74 @@ class JordanTTSEngine:
             return "soft"
         return "neutral"
 
+    def _cloud_instructions(self, emotion: str, tuning: dict | None = None) -> str:
+        tuning = tuning or {}
+        base = RECIPE.get("cloud", {}).get("style_prompt") or (
+            "Fale em português brasileiro com uma voz feminina jovem-adulta, clara, brilhante, "
+            "muito expressiva, rápida e carismática. Soe humana, inteligente e espontânea, com "
+            "um pequeno sorriso audível. Não soe como criança e não imite nenhuma personagem ou pessoa real."
+        )
+        emotion_map = RECIPE.get("cloud", {}).get("emotion_prompt", {})
+        emotion_text = emotion_map.get(emotion, emotion_map.get("neutral", ""))
+
+        speed = float(tuning.get("speed", 1.0) or 1.0)
+        pitch = float(tuning.get("pitch", 0.0) or 0.0)
+        energy = float(tuning.get("energy", 1.0) or 1.0)
+        expressive = float(tuning.get("expressiveness", 1.0) or 1.0)
+        brightness = float(tuning.get("brightness", 0.0) or 0.0)
+
+        adjustments = []
+        if speed >= 1.08:
+            adjustments.append("Mantenha um ritmo claramente rápido, mas sempre inteligível.")
+        elif speed <= 0.94:
+            adjustments.append("Diminua um pouco o ritmo e dê espaço às palavras.")
+        if pitch >= 0.8:
+            adjustments.append("Use uma colocação levemente mais aguda, sem infantilizar a voz.")
+        elif pitch <= -0.8:
+            adjustments.append("Use uma colocação um pouco mais grave e firme.")
+        if energy >= 1.10:
+            adjustments.append("Aumente a energia e o sorriso na emissão.")
+        elif energy <= 0.90:
+            adjustments.append("Reduza a energia e fale de maneira mais macia.")
+        if expressive >= 1.12:
+            adjustments.append("Varie mais a entonação e dê intenção clara a cada frase.")
+        if brightness >= 0.12:
+            adjustments.append("Use um timbre mais luminoso e aberto, com pouca nasalidade.")
+        elif brightness <= -0.12:
+            adjustments.append("Use um timbre um pouco mais quente e suave.")
+
+        return " ".join(part for part in [base, emotion_text, *adjustments] if part).strip()
+
+    def _cloud_wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
+        clean = self._pronounce(self._clean(text))
+        if not clean:
+            raise ValueError("Texto vazio para TTS.")
+        emo = self._auto_emotion(clean, emotion)
+        instructions = self._cloud_instructions(emo, tuning)
+        with self.openai_client.audio.speech.with_streaming_response.create(
+            model=self.cloud_model,
+            voice=self.cloud_voice,
+            input=clean,
+            instructions=instructions,
+            response_format="wav",
+        ) as response:
+            data = response.read()
+        if not data:
+            raise RuntimeError("O TTS neural retornou áudio vazio.")
+        return data
+
     @staticmethod
-    def _presence(audio: np.ndarray, amount: float) -> np.ndarray:
+    def _presence(audio, amount: float):
         if abs(amount) < 1e-5:
             return audio
-        # pre-emphasis/de-emphasis leve para brilho/escurecimento
         if amount > 0:
             emphasized = lfilter([1.0, -0.72], [1.0], audio)
             return audio * (1.0 - amount) + emphasized * amount
-        # suavização simples quando amount < 0
         smooth = lfilter([0.18, 0.18, 0.18, 0.18, 0.18], [1.0], audio)
         a = min(1.0, abs(amount) * 3.0)
-        return audio * (1.0-a) + smooth * a
+        return audio * (1.0 - a) + smooth * a
 
-    def _post(self, audio: np.ndarray, emotion: str, punctuation: str = "", tuning: dict | None = None) -> np.ndarray:
+    def _post(self, audio, emotion: str, punctuation: str = "", tuning: dict | None = None):
         p = RECIPE["prosody"][emotion]
         tuning = tuning or {}
         y = np.asarray(audio, dtype=np.float32)
@@ -138,17 +279,16 @@ class JordanTTSEngine:
         expressiveness = max(0.55, min(1.50, float(tuning.get("expressiveness", 1.0) or 1.0)))
         if "?" in punctuation and len(y) > SR // 2:
             cut = int(len(y) * max(0.68, min(0.80, 0.76 - 0.02 * expressiveness)))
-            tail = librosa.effects.pitch_shift(y[cut:], sr=SR, n_steps=0.70 * expressiveness).astype(np.float32)
+            tail = librosa.effects.pitch_shift(y[cut:], sr=SR, n_steps=0.62 * expressiveness).astype(np.float32)
             y = np.concatenate([y[:cut], tail])
 
         if "!" in punctuation:
             y *= 1.0 + (0.035 * expressiveness)
 
-        # whisper: ar sintético sutil, ainda mantendo inteligibilidade
         if emotion == "whisper":
             rng = np.random.default_rng(2406)
-            noise = rng.normal(0.0, 0.004, size=y.shape).astype(np.float32)
-            y = y * 0.90 + noise
+            noise = rng.normal(0.0, 0.0035, size=y.shape).astype(np.float32)
+            y = y * 0.91 + noise
 
         peak = float(np.max(np.abs(y))) if y.size else 0.0
         if peak > 0.97:
@@ -160,7 +300,8 @@ class JordanTTSEngine:
         chunks = re.findall(r".+?(?:[.!?…]+|$)", text)
         return [c.strip() for c in chunks if c.strip()]
 
-    def synthesize(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> tuple[int, np.ndarray]:
+    def synthesize(self, text: str, emotion: str = "auto", tuning: dict | None = None):
+        self._ensure_local_pipeline()
         tuning = tuning or {}
         text = self._pronounce(self._clean(text))
         if not text:
@@ -169,6 +310,8 @@ class JordanTTSEngine:
         pieces = []
         for chunk in self._split(text):
             emo = self._auto_emotion(chunk, emotion)
+            if emo not in RECIPE["prosody"]:
+                emo = "neutral"
             prosody = RECIPE["prosody"][emo]
             voice = self._voice(emo)
             generated = self.pipeline(
@@ -187,23 +330,47 @@ class JordanTTSEngine:
             y = self._post(y, emo, chunk[-3:], tuning)
             pieces.append(y)
 
-            pause_ms = 70
+            pause_ms = 62
             if chunk.endswith("?"):
-                pause_ms = 95
+                pause_ms = 88
             elif chunk.endswith("!"):
-                pause_ms = 75
+                pause_ms = 68
             elif chunk.endswith(("...", "…")):
-                pause_ms = 180
+                pause_ms = 165
             elif chunk.endswith("."):
-                pause_ms = 110
+                pause_ms = 95
             pieces.append(np.zeros(int(SR * pause_ms / 1000), dtype=np.float32))
 
         if not pieces:
             return SR, np.zeros(1, dtype=np.float32)
         return SR, np.concatenate(pieces)
 
-    def wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
+    def _local_wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
         sr, audio = self.synthesize(text, emotion, tuning)
         out = io.BytesIO()
         sf.write(out, audio, sr, format="WAV", subtype="PCM_16")
         return out.getvalue()
+
+    def wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
+        selected = self.selected_provider
+        self.last_error = None
+
+        if selected == "openai":
+            try:
+                audio = self._cloud_wav_bytes(text, emotion, tuning)
+                self.last_provider = "openai"
+                return audio
+            except Exception as exc:
+                self.last_error = f"OpenAI TTS: {exc}"
+                if not self.local_available:
+                    raise
+
+        try:
+            audio = self._local_wav_bytes(text, emotion, tuning)
+            self.last_provider = "local"
+            return audio
+        except Exception as exc:
+            local_error = f"Local TTS: {exc}"
+            if self.last_error:
+                raise RuntimeError(f"{self.last_error} | {local_error}") from exc
+            raise RuntimeError(local_error) from exc

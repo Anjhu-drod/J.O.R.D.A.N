@@ -31,15 +31,15 @@ def mix(weights: dict):
     return out.contiguous()
 
 def main():
-    print("Criando identidade vocal JORDAN Spark V1...")
+    print("Criando identidade vocal JORDAN Spark V2...")
     for emotion, weights in RECIPE["emotion_mix"].items():
         tensor = mix(weights)
-        path = MODEL_DIR / f"jordan_spark_v1_{emotion}.pt"
+        path = MODEL_DIR / f"jordan_spark_v2_{emotion}.pt"
         torch.save(tensor, path)
         print("OK:", path.name, tuple(tensor.shape))
     marker = MODEL_DIR / "VOICE_READY.txt"
     marker.write_text(
-        "JORDAN Spark V1 gerada com sucesso.\n"
+        "JORDAN Spark V2 gerada com sucesso.\n"
         "Os arquivos .pt desta pasta são embeddings de voz Kokoro e precisam "
         "do modelo base Kokoro-82M para síntese.\n",
         encoding="utf-8"

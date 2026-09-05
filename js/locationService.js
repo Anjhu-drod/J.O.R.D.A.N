@@ -62,6 +62,47 @@ export class LocationService {
     };
   }
 
+  async reverseGeocode(lat, lon) {
+    if (!navigator.onLine) return null;
+    const url = new URL("https://nominatim.openstreetmap.org/reverse");
+    url.search = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+      format: "jsonv2",
+      zoom: "18",
+      addressdetails: "1"
+    }).toString();
+    const hit = await fetchJson(url, 10000);
+    if (!hit) return null;
+    const address = hit.address || {};
+    return {
+      displayName: hit.display_name || "",
+      road: address.road || address.pedestrian || address.residential || "",
+      houseNumber: address.house_number || "",
+      neighbourhood: address.neighbourhood || address.suburb || address.quarter || "",
+      city: address.city || address.town || address.village || address.municipality || "",
+      state: address.state || "",
+      country: address.country || "",
+      postcode: address.postcode || ""
+    };
+  }
+
+  async currentLocationInfo({ detail = "coarse" } = {}) {
+    const position = await this.currentPosition();
+    let place = null;
+    if (navigator.onLine) {
+      try { place = await this.reverseGeocode(position.lat, position.lon); } catch { place = null; }
+    }
+    const coarse = [place?.city, place?.state, place?.country].filter(Boolean).join(", ");
+    const address = [place?.road, place?.houseNumber, place?.neighbourhood, place?.city, place?.state].filter(Boolean).join(", ");
+    return {
+      ...position,
+      label: detail === "address" ? (address || coarse || "Localização atual") : (coarse || "Localização atual"),
+      place,
+      detail
+    };
+  }
+
   async nearest(category = "fuel", { radius = 6000, limit = 5 } = {}) {
     if (!navigator.onLine) throw new Error("offline");
     const config = CATEGORY_CONFIG[category] ?? CATEGORY_CONFIG.fuel;

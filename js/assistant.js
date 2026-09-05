@@ -824,6 +824,29 @@ export class JordanAssistant {
   async tryLocationRequest(original, text) {
     if (!this.location) return null;
 
+    // Contingência local: mesmo se o Agent Core estiver offline, perguntas
+    // simples sobre a localização atual não devem cair numa resposta genérica.
+    if (/\b(onde eu estou|onde estou agora|qual (?:e |é )?minha localizacao|em que cidade eu estou|what(?:'s| is) my location|where am i|donde estoy)\b/.test(text)) {
+      try {
+        const result = await this.location.currentLocationInfo({ detail: "coarse" });
+        const precision = Number.isFinite(result?.position?.accuracy)
+          ? ` A precisão aproximada do navegador é de ${Math.round(result.position.accuracy)} metros.`
+          : "";
+        return this.response(`Pelo dispositivo, você está em ${result.label}.${precision}`, {
+          topic: "location",
+          mood: "curious"
+        });
+      } catch (error) {
+        if (error?.code === 1 || error?.message === "permission-denied") {
+          return this.response("Eu consigo descobrir onde você está, mas preciso que você permita a localização no navegador.", { topic: "location" });
+        }
+        if (error?.message === "offline") {
+          return this.response("Consigo ler sua posição pelo dispositivo, mas estou sem internet para transformar as coordenadas em nome de cidade agora.", { topic: "location" });
+        }
+        return this.response("Tentei consultar sua localização, mas o navegador não conseguiu me dar uma posição agora.", { topic: "location" });
+      }
+    }
+
     let category = null;
     if (/\b(posto|posto de gasolina|posto de combustivel|gas station|fuel station|gasolinera|ガソリンスタンド)\b/.test(text) && /\b(perto|proximo|mais proximo|nearest|near|closest|cerca|近く)\b/.test(text)) category = "fuel";
     else if (/\b(farmacia|pharmacy|drugstore|farmacia|薬局)\b/.test(text) && /\b(perto|proximo|nearest|near|closest|cerca|近く)\b/.test(text)) category = "pharmacy";

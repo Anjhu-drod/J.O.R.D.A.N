@@ -1,151 +1,169 @@
 {
-  "name": "JORDAN Spark V1",
-  "description": "Voz original feminina, jovem, brilhante, rápida e muito expressiva para PT-BR.",
-  "reference_direction": "Energia juvenil, carisma, velocidade e expressividade; não é uma cópia de personagem/dubladora específica.",
+  "name": "JORDAN Spark V2",
+  "description": "Identidade vocal original feminina jovem-adulta, luminosa, rápida, carismática e muito expressiva para PT-BR.",
+  "reference_direction": "Energia juvenil, espontaneidade, humor, sorriso audível e grande variação de entonação; não imita personagem, dubladora ou pessoa específica.",
   "engine": "Kokoro-82M",
   "language": "pt-BR",
   "sample_rate": 24000,
   "base_repo": "hexgrad/Kokoro-82M",
   "identity_mix": {
-    "pf_dora": 0.78,
-    "af_heart": 0.12,
-    "af_bella": 0.06,
+    "pf_dora": 0.74,
+    "af_heart": 0.14,
+    "af_bella": 0.08,
     "af_sky": 0.04
   },
   "emotion_mix": {
     "neutral": {
-      "pf_dora": 0.78,
-      "af_heart": 0.12,
-      "af_bella": 0.06,
+      "pf_dora": 0.74,
+      "af_heart": 0.14,
+      "af_bella": 0.08,
       "af_sky": 0.04
     },
     "happy": {
-      "pf_dora": 0.72,
-      "af_heart": 0.16,
-      "af_bella": 0.08,
+      "pf_dora": 0.7,
+      "af_heart": 0.17,
+      "af_bella": 0.09,
       "af_sky": 0.04
     },
     "excited": {
       "pf_dora": 0.66,
-      "af_heart": 0.12,
-      "af_bella": 0.18,
+      "af_heart": 0.16,
+      "af_bella": 0.14,
       "af_sky": 0.04
     },
     "curious": {
-      "pf_dora": 0.75,
-      "af_heart": 0.1,
-      "af_bella": 0.05,
-      "af_sky": 0.1
+      "pf_dora": 0.72,
+      "af_heart": 0.12,
+      "af_bella": 0.07,
+      "af_sky": 0.09
     },
     "playful": {
-      "pf_dora": 0.68,
-      "af_heart": 0.07,
-      "af_bella": 0.15,
-      "af_sky": 0.1
+      "pf_dora": 0.67,
+      "af_heart": 0.13,
+      "af_bella": 0.14,
+      "af_sky": 0.06
     },
     "surprised": {
-      "pf_dora": 0.66,
-      "af_heart": 0.1,
-      "af_bella": 0.18,
-      "af_sky": 0.06
+      "pf_dora": 0.65,
+      "af_heart": 0.14,
+      "af_bella": 0.16,
+      "af_sky": 0.05
     },
     "serious": {
       "pf_dora": 0.84,
-      "af_heart": 0.08,
-      "af_bella": 0.04,
-      "af_sky": 0.04
+      "af_heart": 0.1,
+      "af_bella": 0.03,
+      "af_sky": 0.03
     },
     "concerned": {
       "pf_dora": 0.8,
-      "af_heart": 0.1,
-      "af_bella": 0.04,
-      "af_sky": 0.06
+      "af_heart": 0.12,
+      "af_bella": 0.03,
+      "af_sky": 0.05
     },
     "soft": {
       "pf_dora": 0.84,
-      "af_heart": 0.1,
+      "af_heart": 0.11,
       "af_bella": 0.0,
-      "af_sky": 0.06
+      "af_sky": 0.05
     },
     "whisper": {
       "pf_dora": 0.86,
-      "af_heart": 0.08,
+      "af_heart": 0.09,
       "af_bella": 0.0,
-      "af_sky": 0.06
+      "af_sky": 0.05
     },
     "annoyed": {
       "pf_dora": 0.8,
-      "af_heart": 0.1,
-      "af_bella": 0.1,
+      "af_heart": 0.11,
+      "af_bella": 0.09,
       "af_sky": 0.0
     }
   },
   "prosody": {
     "neutral": {
-      "speed": 1.12,
-      "pitch_semitones": 1.0,
+      "speed": 1.14,
+      "pitch_semitones": 0.7,
       "gain": 1.0,
-      "brightness": 0.08
+      "brightness": 0.07
     },
     "happy": {
-      "speed": 1.16,
-      "pitch_semitones": 1.35,
+      "speed": 1.18,
+      "pitch_semitones": 1.0,
       "gain": 1.02,
-      "brightness": 0.12
+      "brightness": 0.11
     },
     "excited": {
-      "speed": 1.21,
-      "pitch_semitones": 1.65,
+      "speed": 1.23,
+      "pitch_semitones": 1.28,
       "gain": 1.04,
-      "brightness": 0.16
-    },
-    "curious": {
-      "speed": 1.13,
-      "pitch_semitones": 1.25,
-      "gain": 1.0,
-      "brightness": 0.1
-    },
-    "playful": {
-      "speed": 1.19,
-      "pitch_semitones": 1.55,
-      "gain": 1.03,
       "brightness": 0.14
     },
+    "curious": {
+      "speed": 1.15,
+      "pitch_semitones": 0.95,
+      "gain": 1.0,
+      "brightness": 0.09
+    },
+    "playful": {
+      "speed": 1.2,
+      "pitch_semitones": 1.18,
+      "gain": 1.03,
+      "brightness": 0.13
+    },
     "surprised": {
-      "speed": 1.17,
-      "pitch_semitones": 1.85,
+      "speed": 1.18,
+      "pitch_semitones": 1.45,
       "gain": 1.04,
-      "brightness": 0.16
+      "brightness": 0.15
     },
     "serious": {
-      "speed": 1.05,
+      "speed": 1.06,
+      "pitch_semitones": 0.25,
+      "gain": 0.99,
+      "brightness": 0.01
+    },
+    "concerned": {
+      "speed": 1.07,
       "pitch_semitones": 0.45,
       "gain": 0.98,
       "brightness": 0.02
     },
-    "concerned": {
-      "speed": 1.06,
-      "pitch_semitones": 0.7,
-      "gain": 0.97,
-      "brightness": 0.03
-    },
     "soft": {
-      "speed": 1.0,
-      "pitch_semitones": 0.45,
-      "gain": 0.84,
+      "speed": 1.01,
+      "pitch_semitones": 0.3,
+      "gain": 0.86,
       "brightness": -0.02
     },
     "whisper": {
-      "speed": 0.96,
-      "pitch_semitones": 0.2,
-      "gain": 0.62,
-      "brightness": 0.1
+      "speed": 0.98,
+      "pitch_semitones": 0.12,
+      "gain": 0.64,
+      "brightness": 0.08
     },
     "annoyed": {
-      "speed": 1.1,
-      "pitch_semitones": 0.65,
-      "gain": 1.02,
-      "brightness": 0.04
+      "speed": 1.11,
+      "pitch_semitones": 0.4,
+      "gain": 1.01,
+      "brightness": 0.03
+    }
+  },
+  "cloud": {
+    "model": "gpt-4o-mini-tts",
+    "voice": "coral",
+    "style_prompt": "Fale em português brasileiro natural. Use uma identidade vocal feminina jovem-adulta, clara e brilhante, com energia alta, carisma, inteligência e espontaneidade. Fale relativamente rápido, mas articule cada palavra com clareza. Use um pequeno sorriso audível, pausas curtas e naturais e bastante variação de pitch e ritmo. Tenha pouca nasalidade. Soe humana e expressiva, nunca robótica. O agudo deve ser leve: não soe como criança. Esta é uma voz original da JORDAN; não imite nenhuma personagem, dubladora, celebridade ou pessoa real.",
+    "emotion_prompt": {
+      "neutral": "Mantenha energia viva e natural, como uma conversa direta entre amigos.",
+      "happy": "Sorria mais na voz e deixe a alegria aparecer sem cantar as frases.",
+      "excited": "Aumente bastante a energia e a velocidade, com entusiasmo genuíno, sem perder inteligibilidade.",
+      "curious": "Use curiosidade evidente, uma subida suave no final das perguntas e atenção real ao assunto.",
+      "playful": "Fale de modo brincalhão e esperto, com pequenas mudanças de ritmo e um sorriso perceptível.",
+      "surprised": "Mostre surpresa rápida e autêntica, sem gritar.",
+      "serious": "Reduza um pouco o sorriso, desacelere levemente e use firmeza e clareza.",
+      "concerned": "Use uma energia mais cuidadosa e acolhedora, sem soar dramática.",
+      "soft": "Fale mais baixo e macio, mantendo proximidade e clareza.",
+      "whisper": "Use um quase-sussurro íntimo, ainda inteligível e sem sopro exagerado.",
+      "annoyed": "Mostre leve impaciência controlada e inteligência; nunca caricatural."
     }
   }
 }

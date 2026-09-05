@@ -68,7 +68,17 @@ export class AutonomousAgentService {
       try {
         const response = await fetch(`${this.endpoint}/agent/health`, options);
         const data = await response.json().catch(() => ({}));
-        this.lastHealth = response.ok ? { ok: true, ...data } : { ok: false, reason: data?.detail || `HTTP ${response.status}` };
+        const available = Boolean(data?.available);
+        this.lastHealth = {
+          ...data,
+          httpOk: response.ok,
+          reachable: response.ok,
+          available,
+          ok: Boolean(response.ok && available),
+          reason: response.ok
+            ? (available ? null : (data?.reason || "Agent Core não configurado."))
+            : (data?.detail || data?.reason || `HTTP ${response.status}`)
+        };
       } finally {
         clearTimeout(timer);
       }
@@ -80,31 +90,90 @@ export class AutonomousAgentService {
     return this.lastHealth;
   }
 
+  async diagnose() {
+    if (!this.enabled) return { ok: false, enabled: false, reason: "disabled" };
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15_000);
+      const options = { method: "GET", mode: "cors", cache: "no-store", signal: controller.signal };
+      if (isLoopback(this.endpoint)) options.targetAddressSpace = "loopback";
+      try {
+        const response = await fetch(`${this.endpoint}/agent/diagnose`, options);
+        const data = await response.json().catch(() => ({}));
+        const result = {
+          ...data,
+          reachable: response.ok,
+          httpOk: response.ok,
+          available: Boolean(data?.available),
+          ok: Boolean(response.ok && data?.ok),
+          reason: data?.reason || (response.ok ? null : `HTTP ${response.status}`)
+        };
+        this.lastHealth = result;
+        this.lastHealthAt = Date.now();
+        return result;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (error) {
+      const result = { ok: false, reachable: false, available: false, reason: error?.name === "AbortError" ? "timeout" : (error?.message || "unreachable"), error };
+      this.lastHealth = result;
+      this.lastHealthAt = Date.now();
+      return result;
+    }
+  }
+
   async execute(message, { context = {}, toolHandlers = {}, onToolCall = null } = {}) {
     if (!this.enabled) return null;
     const text = String(message || "").trim();
     if (!text) return null;
 
+    const health = await this.health().catch(() => null);
+    if (health && !health.ok) {
+      const error = new Error(health.reason || "JORDAN Agent Core indisponível.");
+      error.code = health.reachable ? "agent-unavailable" : "agent-unreachable";
+      throw error;
+    }
+
     let previousResponseId = this.lastResponseId;
     let toolOutputs = null;
     let initialMessage = text;
+    let retriedConversation = false;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-      const payload = await postJson(`${this.endpoint}/agent/turn`, {
-        message: initialMessage,
-        previous_response_id: previousResponseId,
-        tool_outputs: toolOutputs,
-        context
-      });
+      let payload;
+      try {
+        payload = await postJson(`${this.endpoint}/agent/turn`, {
+          message: initialMessage,
+          previous_response_id: previousResponseId,
+          tool_outputs: toolOutputs,
+          context
+        });
+      } catch (error) {
+        // Se o servidor perdeu um previous_response_id antigo, recomeçamos a
+        // conversa uma única vez em vez de jogar o usuário no fallback legado.
+        if (!toolOutputs && previousResponseId && !retriedConversation && [400, 404, 409].includes(Number(error?.status))) {
+          retriedConversation = true;
+          previousResponseId = null;
+          this.lastResponseId = null;
+          initialMessage = text;
+          round -= 1;
+          continue;
+        }
+        throw error;
+      }
 
       if (payload.response_id) previousResponseId = payload.response_id;
       const calls = Array.isArray(payload.tool_calls) ? payload.tool_calls : [];
 
       if (!calls.length) {
+        const answerText = String(payload.text || "").trim();
+        if (!answerText) throw new Error("O Agent Core respondeu sem texto e sem ação.");
         this.lastResponseId = previousResponseId || this.lastResponseId;
+        this.lastHealth = { ok: true, reachable: true, available: true, model: payload.model || this.lastHealth?.model || null };
+        this.lastHealthAt = Date.now();
         return {
-          text: String(payload.text || "").trim(),
-          speak: String(payload.speak || payload.text || "").trim(),
+          text: answerText,
+          speak: String(payload.speak || answerText).trim(),
           mood: payload.mood || "neutral",
           source: "agent",
           model: payload.model || null,

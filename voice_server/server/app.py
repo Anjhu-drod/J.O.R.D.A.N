@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from .agent_engine import JordanAgentEngine
 from .tts_engine import JordanTTSEngine
 
-app = FastAPI(title="JORDAN Core", version="1.1")
+app = FastAPI(title="JORDAN Core", version="1.3")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +20,7 @@ agent_engine = JordanAgentEngine()
 
 
 class SpeakRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=1600)
+    text: str = Field(min_length=1, max_length=1800)
     emotion: str = "auto"
     tuning: dict = Field(default_factory=dict)
 
@@ -43,13 +43,22 @@ def health():
     return {
         "ok": True,
         "core": "JORDAN Core",
-        "voice": "JORDAN Spark V1",
+        "voice": status.get("name", "JORDAN Spark V2"),
         "language": "pt-BR",
         "voice_ready": status["ready"],
+        "voice_provider": status.get("provider"),
+        "voice_provider_mode": status.get("provider_mode"),
+        "voice_cloud_model": status.get("cloud_model"),
+        "voice_cloud_voice": status.get("cloud_voice"),
+        "voice_cloud_available": status.get("cloud_available"),
+        "voice_local_available": status.get("local_available"),
         "voice_auto_repair": status["auto_repair"],
         "missing_voice_emotions": status["missing_emotions"],
         "agent_available": agent_engine.available,
         "agent_model": agent_engine.model,
+        "agent_reason": agent_engine.availability_reason,
+        "voice_last_provider": status.get("last_provider"),
+        "voice_last_error": status.get("last_error"),
     }
 
 
@@ -70,6 +79,14 @@ def agent_health():
         "model": agent_engine.model,
         "reason": agent_engine.availability_reason,
     }
+
+
+@app.get("/agent/diagnose")
+def agent_diagnose():
+    result = agent_engine.diagnose()
+    if not result.get("ok"):
+        return result
+    return result
 
 
 @app.post("/agent/turn")

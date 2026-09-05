@@ -48,7 +48,7 @@ export class JordanTTSService {
   }
 
   get label() {
-    return "JORDAN Spark Neural V1";
+    return "JORDAN Spark Neural V2";
   }
 
   get isPlaying() {

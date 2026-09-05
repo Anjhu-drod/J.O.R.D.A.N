@@ -1,23 +1,23 @@
-// JORDAN Spark PT-BR
+// JORDAN Spark V2 PT-BR
 // Perfil ORIGINAL de prosódia da JORDAN. Ele não clona a identidade vocal de
 // nenhuma personagem/pessoa. Enquanto o projeto estiver 100% web sem um modelo
 // neural próprio, o timbre-base ainda vem do sintetizador disponível no aparelho.
 
 export const JORDAN_VOICE_PROFILE = Object.freeze({
-  id: "jordan-spark-ptbr-v1",
-  label: "JORDAN Spark · PT-BR",
+  id: "jordan-spark-ptbr-v2",
+  label: "JORDAN Spark V2 · PT-BR",
   locale: "pt-BR",
-  baseRate: 1.20,
-  basePitch: 1.34,
-  excitementRate: 0.045,
-  excitementPitch: 0.08,
+  baseRate: 1.16,
+  basePitch: 1.20,
+  excitementRate: 0.065,
+  excitementPitch: 0.07,
   seriousRate: -0.045,
   seriousPitch: -0.045,
   gentleRate: -0.025,
   gentlePitch: 0.025,
-  questionTailPitch: 0.12,
+  questionTailPitch: 0.10,
   questionTailRate: -0.055,
-  exclamationPitch: 0.11,
+  exclamationPitch: 0.09,
   exclamationRate: 0.04
 });
 
