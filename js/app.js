@@ -43,6 +43,9 @@ import { MessageService } from "./messageService.js";
 import { ManualCoreService } from "./manualCoreService.js";
 import { JordanChessService, coordToSquare } from "./jordanChessService.js";
 import { safeCalculate } from "./mathService.js";
+import { NativeBridgeService } from "./nativeBridgeService.js";
+import { LocalReasoningService } from "./localReasoningService.js";
+import { GeneralKnowledgeService } from "./generalKnowledgeService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -60,6 +63,9 @@ const presence = new PresenceModeService({ getSetting, setSetting });
 const messages = new MessageService(lineageService);
 const manualCore = new ManualCoreService();
 const chess = new JordanChessService();
+const nativeBridge = new NativeBridgeService();
+const localReasoning = new LocalReasoningService();
+const generalKnowledge = new GeneralKnowledgeService();
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
@@ -263,6 +269,16 @@ async function initialize() {
   ui.setAccountUser(authService.currentUser);
   ui.setAccountProviders(authService.providerSummary(), authService.providerIds());
   ui.setCloudStatus(cloudState);
+
+  const nativeStatus = await nativeBridge.init().catch((error) => ({ native: false, platform: "web", lastError: error.message }));
+  ui.setNativeRuntimeStatus?.(nativeStatus);
+  localReasoning.status().then(async (status) => {
+    ui.setLocalReasoningStatus?.(status);
+    if (status?.availability === "available" && !status?.ready) {
+      const prepared = await localReasoning.prepare().catch(() => null);
+      if (prepared) ui.setLocalReasoningStatus?.(prepared);
+    }
+  }).catch(() => null);
 
   const lineageIdentity = lineageService.currentIdentity;
   ui.setLineageIdentity(lineageIdentity);
@@ -882,6 +898,59 @@ function bindEvents() {
       : `O Manual Core encontrou uma falha interna · ${health.passed}/${health.total} testes passaram.`, "JORDAN MANUAL CORE", 8000);
   });
 
+  ui.elements.nativeAutostartToggle?.addEventListener("change", async (event) => {
+    registerInteraction();
+    const desired = Boolean(event.target.checked);
+    const result = await nativeBridge.setAutostart(desired).catch((error) => ({ ok: false, reason: error.message }));
+    if (!result.ok) {
+      event.target.checked = false;
+      ui.toast("Inicialização automática só fica disponível no app nativo de desktop.", "JORDAN NATIVE");
+    } else {
+      ui.setNativeRuntimeStatus?.(nativeBridge.status());
+      ui.toast(result.enabled ? "JORDAN configurada para iniciar com o sistema." : "Inicialização automática desativada.", "JORDAN NATIVE");
+    }
+  });
+
+  ui.elements.minimizeJordanButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const result = await nativeBridge.minimize();
+    if (!result.ok) ui.toast("Minimizar por comando nativo só funciona na versão instalada.", "JORDAN NATIVE");
+  });
+
+  ui.elements.backgroundJordanButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const result = await nativeBridge.hideToBackground();
+    if (!result.ok) ui.toast("Segundo plano nativo só funciona na versão instalada.", "JORDAN NATIVE");
+  });
+
+  ui.elements.prepareLocalReasoningButton?.addEventListener("click", async () => {
+    registerInteraction();
+    try {
+      ui.elements.prepareLocalReasoningButton.disabled = true;
+      const status = await localReasoning.prepare({
+        onProgress: (progress) => ui.setLocalReasoningStatus?.({ availability: "downloading", progress })
+      });
+      ui.setLocalReasoningStatus?.(status);
+      ui.toast("IA local preparada. Perguntas fora do roteiro agora podem usar o modelo do próprio dispositivo.", "JORDAN LOCAL REASONING", 8000);
+    } catch (error) {
+      ui.setLocalReasoningStatus?.(await localReasoning.status());
+      ui.toast(`IA local não pôde ser ativada: ${error.message}`, "JORDAN LOCAL REASONING", 9000);
+    } finally {
+      if (ui.elements.prepareLocalReasoningButton) ui.elements.prepareLocalReasoningButton.disabled = false;
+    }
+  });
+
+  ui.elements.nativeDownloadButtons?.forEach((button) => {
+    button.addEventListener("click", async () => {
+      registerInteraction();
+      const platform = button.dataset.nativeDownload;
+      const url = nativeBridge.downloadTargets()[platform];
+      if (!url) return;
+      const opened = await nativeBridge.openUrl(url, { title: `Download JORDAN · ${platform}`, inApp: false });
+      if (!opened.ok) window.location.href = url;
+    });
+  });
+
   ui.elements.musicDefaultSource?.addEventListener("change", async (event) => {
     musicDefaultSource = event.target.value === "jordan" ? "jordan" : "youtube";
     await setSetting("music.defaultSource", musicDefaultSource);
@@ -1479,6 +1548,8 @@ async function buildManualCoreContext() {
     upcomingEvents: upcoming.map(coreEventView),
     unreadMessages: unreadCount,
     availableApps: appLauncher.listTargets().map((item) => item.id),
+    native: nativeBridge.status(),
+    localReasoning: localReasoning.snapshot(),
     chess: chessCoreState()
   };
 }
@@ -1506,15 +1577,15 @@ async function applyLegacyCoreAction(result) {
   }
   if (result.action === "open-youtube-music") {
     const query = String(result.query || "").trim();
-    const url = query
-      ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
-      : "https://www.youtube.com/";
-    const popup = window.open(url, "_blank", "noopener,noreferrer");
-    if (!popup) ui.addExternalLink("ABRIR YOUTUBE", url, "JORDAN MUSIC");
+    const opened = await nativeBridge.openYoutube(query);
+    if (!opened.ok) {
+      const url = query ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}` : "https://www.youtube.com/";
+      ui.addExternalLink("ABRIR YOUTUBE", url, "JORDAN MUSIC");
+    }
   }
   if (result.action === "launch-app" && result.appTarget?.url) {
-    const popup = window.open(result.appTarget.url, "_blank", "noopener,noreferrer");
-    if (!popup) ui.addExternalLink(`ABRIR ${result.appTarget.label}`, result.appTarget.url, "APP / SITE");
+    const opened = await nativeBridge.launchTarget(result.appTarget, { inApp: true });
+    if (!opened.ok) ui.addExternalLink(`ABRIR ${result.appTarget.label}`, result.appTarget.url, "APP / SITE");
   }
 }
 
@@ -1632,9 +1703,44 @@ function createManualCoreToolHandlers() {
       const aliases = { googlemaps: "maps", mapa: "maps", mapas: "maps", email: "gmail", "e-mail": "gmail", whats: "whatsapp" };
       const target = appLauncher.getTarget(aliases[normalized] || normalized);
       if (!target) return { ok: false, error: `App/site não cadastrado: ${app}` };
-      const popup = window.open(target.url, "_blank", "noopener,noreferrer");
-      if (!popup) ui.addExternalLink(`ABRIR ${target.label}`, target.url, "APP / SITE");
-      return { ok: Boolean(popup), blocked: !popup, app: target.label, url: target.url };
+      const opened = await nativeBridge.launchTarget(target, { inApp: true });
+      if (!opened.ok && opened.mode === "blocked") ui.addExternalLink(`ABRIR ${target.label}`, target.url, "APP / SITE");
+      return { ...opened, app: target.label, url: target.url, blocked: !opened.ok };
+    },
+
+    async get_system_status({ target = "all" } = {}) {
+      const native = nativeBridge.status();
+      const payload = {
+        ok: true,
+        target,
+        core: manualCoreEnabled,
+        online: Boolean(navigator.onLine && internetEnabled),
+        internetEnabled,
+        native: native.native,
+        platform: native.platform,
+        backgroundCapable: native.backgroundCapable,
+        autostart: native.autostart,
+        localReasoning: localReasoning.snapshot()
+      };
+      return payload;
+    },
+
+    async answer_local_knowledge({ query = "" } = {}) {
+      return generalKnowledge.answer(String(query || "")) || { ok: false };
+    },
+
+    async reason_general({ query = "" } = {}) {
+      const local = await localReasoning.answer(String(query || ""), {
+        memories: (await memory.summarizeFacts(8).catch(() => [])).map((item) => ({ label: item.label, value: item.value }))
+      });
+      if (local?.ok) return local;
+
+      // Sem modelo local, reaproveita os módulos antigos e a pesquisa automática.
+      const result = await assistant.execute(String(query || ""), { source: "manual-core-reasoning", confidence: 1 });
+      await applyLegacyCoreAction(result);
+      return result?.understood !== false && result?.text
+        ? { ok: true, text: result.text, source: result.source || "legacy-reasoning" }
+        : { ok: false, reason: local?.reason || "no-local-model" };
     },
 
     async open_view({ view = "core" } = {}) {
@@ -1935,11 +2041,11 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     }
     if (result.action === "open-youtube-music") {
       const query = String(result.query || "").trim();
-      const url = query
-        ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
-        : "https://www.youtube.com/";
-      const popup = window.open(url, "_blank", "noopener,noreferrer");
-      if (!popup) ui.addExternalLink("ABRIR YOUTUBE", url, "JORDAN MUSIC");
+      const opened = await nativeBridge.openYoutube(query);
+      if (!opened.ok) {
+        const url = query ? `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}` : "https://www.youtube.com/";
+        ui.addExternalLink("ABRIR YOUTUBE", url, "JORDAN MUSIC");
+      }
     }
     if (result.refreshMessages || result.action === "message-sent") {
       await refreshMessagesView({ markSeen: false }).catch(console.warn);
@@ -1955,8 +2061,8 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
       ui.renderScience(result.science);
     }
     if (result.action === "launch-app" && result.appTarget?.url) {
-      const popup = window.open(result.appTarget.url, "_blank", "noopener,noreferrer");
-      if (!popup) ui.addExternalLink(`ABRIR ${result.appTarget.label}`, result.appTarget.url, "APP / SITE");
+      const opened = await nativeBridge.launchTarget(result.appTarget, { inApp: true });
+      if (!opened.ok) ui.addExternalLink(`ABRIR ${result.appTarget.label}`, result.appTarget.url, "APP / SITE");
     }
     if (result.action === "sing-original" && result.song?.text && voice.synthesisSupported) {
       // A fala normal abaixo usa a prosódia da JORDAN; a letra é um improviso original do próprio app.

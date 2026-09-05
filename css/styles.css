@@ -4791,3 +4791,70 @@ body[data-theme="nova"] .fx-runes i:nth-child(even) { color: var(--red); }
   .chess-square { font-size: clamp(1.8rem, 9.7vw, 3.2rem); }
   .chess-header-chip { display: none; }
 }
+
+/* V0.13 · Native Core / download center */
+.native-runtime-card,
+.local-reasoning-card,
+.native-download-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.native-runtime-card::after,
+.local-reasoning-card::after,
+.native-download-card::after {
+  content: "";
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  right: -90px;
+  bottom: -110px;
+  border: 1px solid color-mix(in srgb, var(--accent, #ff2748) 26%, transparent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.native-download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 10px;
+}
+
+.native-download-button {
+  min-height: 72px;
+  border: 1px solid color-mix(in srgb, var(--accent, #ff2748) 42%, transparent);
+  background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.008));
+  color: var(--text-main, #fff);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 13px 14px;
+  transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.native-download-button:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent, #ff2748);
+  background: color-mix(in srgb, var(--accent, #ff2748) 9%, rgba(255,255,255,.02));
+}
+
+.native-download-button b,
+.native-download-button small {
+  display: block;
+}
+
+.native-download-button b {
+  letter-spacing: .12em;
+  font-size: .83rem;
+}
+
+.native-download-button small {
+  opacity: .62;
+  margin-top: 7px;
+  font-size: .68rem;
+}
+
+@media (max-width: 720px) {
+  .native-download-grid { grid-template-columns: 1fr; }
+}

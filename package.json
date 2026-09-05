@@ -1,0 +1,21 @@
+{
+  "name": "jordan-personal-intelligence",
+  "version": "0.13.0",
+  "private": true,
+  "description": "JORDAN personal assistant - web + Tauri native shell",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "native:check": "node scripts/check-native.mjs",
+    "tauri": "tauri",
+    "native:dev": "npm run build:web && tauri dev",
+    "native:windows": "npm run build:web && tauri build --bundles nsis",
+    "native:android:init": "tauri android init",
+    "native:android": "npm run build:web && tauri android build --apk",
+    "native:ios:init": "tauri ios init",
+    "native:ios": "npm run build:web && tauri ios build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.1"
+  },
+  "type": "module"
+}

@@ -86,6 +86,15 @@ export class JordanUI {
       manualCoreToggle: document.querySelector("#manualCoreToggle"),
       checkManualCoreButton: document.querySelector("#checkManualCoreButton"),
       resetManualConversationButton: document.querySelector("#resetManualConversationButton"),
+      nativeRuntimeStatus: document.querySelector("#nativeRuntimeStatus"),
+      nativeRuntimeBadge: document.querySelector("#nativeRuntimeBadge"),
+      nativeAutostartToggle: document.querySelector("#nativeAutostartToggle"),
+      minimizeJordanButton: document.querySelector("#minimizeJordanButton"),
+      backgroundJordanButton: document.querySelector("#backgroundJordanButton"),
+      localReasoningStatus: document.querySelector("#localReasoningStatus"),
+      prepareLocalReasoningButton: document.querySelector("#prepareLocalReasoningButton"),
+      nativeDownloadStatus: document.querySelector("#nativeDownloadStatus"),
+      nativeDownloadButtons: [...document.querySelectorAll("[data-native-download]")],
       offlineKnowledgeStatus: document.querySelector("#offlineKnowledgeStatus"),
       presenceStatus: document.querySelector("#presenceStatus"),
       voiceTuneSpeed: document.querySelector("#voiceTuneSpeed"),
@@ -363,6 +372,39 @@ export class JordanUI {
     else if (checking) label.textContent = "TESTANDO MANUAL CORE LOCAL...";
     else if (ok) label.textContent = `${status.engine || "JORDAN MANUAL CORE"} · LOCAL · READY`;
     else label.textContent = "MANUAL CORE · ERRO INTERNO";
+  }
+
+  setNativeRuntimeStatus(status = {}) {
+    const native = Boolean(status.native);
+    if (this.elements.nativeRuntimeStatus) {
+      this.elements.nativeRuntimeStatus.textContent = native
+        ? `${String(status.platform || "native").toUpperCase()} APP · v${status.version || "?"}${status.backgroundCapable ? " · BACKGROUND READY" : ""}`
+        : "WEB MODE · compatibilidade";
+    }
+    const badge = this.elements.nativeRuntimeBadge;
+    if (badge) {
+      badge.classList.toggle("online", native);
+      badge.classList.toggle("offline", !native);
+      const label = badge.querySelector("b");
+      if (label) label.textContent = native ? "NATIVE BRIDGE · ONLINE" : "NATIVE BRIDGE · WEB FALLBACK";
+    }
+    if (this.elements.nativeAutostartToggle) {
+      this.elements.nativeAutostartToggle.checked = Boolean(status.autostart);
+      this.elements.nativeAutostartToggle.disabled = !native;
+    }
+    if (this.elements.minimizeJordanButton) this.elements.minimizeJordanButton.disabled = !native;
+    if (this.elements.backgroundJordanButton) this.elements.backgroundJordanButton.disabled = !native;
+  }
+
+  setLocalReasoningStatus(status = {}) {
+    const target = this.elements.localReasoningStatus;
+    if (!target) return;
+    if (status.ready) target.textContent = "IA LOCAL · READY · respostas gerais no dispositivo";
+    else if (status.availability === "downloading") target.textContent = `Baixando modelo local… ${status.progress || 0}%`;
+    else if (status.availability === "downloadable") target.textContent = "Modelo local disponível para download";
+    else if (status.availability === "available") target.textContent = "Modelo local disponível · clique em PREPARAR";
+    else if (status.availability === "unavailable") target.textContent = "IA local embutida indisponível neste runtime";
+    else target.textContent = "Verificando IA local…";
   }
 
   playCinematic(kind = "core", title = "JORDAN", subtitle = "Executando", duration = 760) {

@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.12.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.13.0" />
 </head>
 <body data-theme="nova" class="auth-locked">
   <div class="fx-grid"></div>
@@ -564,7 +564,7 @@
               <button id="checkVoiceCoreButton" class="hud-button small">TESTAR CONEXÃO</button>
               <button id="testVoiceButton" class="hud-button small primary">OUVIR JORDAN</button>
             </div>
-            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Na V0.12 ela usa somente o Voice Core local; nenhuma chave de IA é necessária. A contingência do dispositivo continua como última rede de segurança para a JORDAN não ficar muda. Para usar a mesma Spark em outro aparelho, exponha o Voice Core por um endpoint HTTPS acessível a ele.</p>
+            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Na V0.13 ela usa somente o Voice Core local; nenhuma chave de IA é necessária. A contingência do dispositivo continua como última rede de segurança para a JORDAN não ficar muda. Para usar a mesma Spark em outro aparelho, exponha o Voice Core por um endpoint HTTPS acessível a ele.</p>
           </article>
           <article class="hud-panel system-card manual-core-card">
             <span>JORDAN MANUAL CORE</span>
@@ -575,7 +575,26 @@
               <button id="checkManualCoreButton" class="hud-button small">TESTAR MANUAL CORE</button>
               <button id="resetManualConversationButton" class="hud-button small">REINICIAR CONTEXTO</button>
             </div>
-            <p class="system-description">Este núcleo roda dentro do próprio navegador e não usa OpenAI API. Ele guarda o contexto recente da conversa, classifica a intenção da frase e escolhe ferramentas locais para cálculo, agenda, memória, localização, apps, pesquisa, mensagens e xadrez. Os módulos especializados antigos continuam por baixo dele como habilidades.</p>
+            <p class="system-description">O Manual Core V2 é o planejador de tarefas da JORDAN. Ele roda localmente, não usa chave de API e agora separa melhor conversa, perguntas, estado do sistema e ações reais. No app nativo ele pode mandar tarefas para o sistema operacional em vez de só devolver um link.</p>
+          </article>
+          <article class="hud-panel system-card native-runtime-card">
+            <span>JORDAN NATIVE CORE</span>
+            <strong id="nativeRuntimeStatus">WEB MODE · compatibilidade</strong>
+            <div id="nativeRuntimeBadge" class="voice-core-status"><i></i><b>NATIVE BRIDGE NÃO CARREGADO</b></div>
+            <label class="hud-toggle compact"><input id="nativeAutostartToggle" type="checkbox" /><span class="toggle-track"><i></i></span><b>INICIAR COM O SISTEMA</b></label>
+            <div class="backup-actions">
+              <button id="minimizeJordanButton" class="hud-button small">MINIMIZAR</button>
+              <button id="backgroundJordanButton" class="hud-button small">SEGUNDO PLANO</button>
+            </div>
+            <p class="system-description">No Windows, fechar a janela esconde a JORDAN na bandeja em vez de matar o processo. No Android e iPhone o app usa os recursos permitidos por cada sistema; o iOS não permite um assistente arbitrário escutando para sempre em segundo plano.</p>
+          </article>
+          <article class="hud-panel system-card local-reasoning-card">
+            <span>LOCAL REASONING CORE · EXPERIMENTAL</span>
+            <strong id="localReasoningStatus">Verificando IA embutida no dispositivo...</strong>
+            <div class="backup-actions">
+              <button id="prepareLocalReasoningButton" class="hud-button small primary">PREPARAR IA LOCAL</button>
+            </div>
+            <p class="system-description">Quando o navegador/runtime oferece a API LanguageModel, a JORDAN usa um modelo de linguagem que roda no próprio dispositivo para perguntas fora do roteiro. Não usa OpenAI API. Se o dispositivo não oferecer esse recurso, o Manual Core continua funcionando sozinho.</p>
           </article>
           <article class="hud-panel system-card knowledge-card">
             <span>OFFLINE KNOWLEDGE CORE</span>
@@ -660,7 +679,7 @@
               </label>
               <button id="musicClearButton" class="hud-button small">LIMPAR BIBLIOTECA</button>
             </div>
-            <p class="system-description">Por padrão, “toque uma música” abre a busca no YouTube. Se você disser “na biblioteca” ou escolher Biblioteca JORDAN acima, ela usa os arquivos locais e funciona offline.</p>
+            <p class="system-description">Por padrão, “toque uma música” usa o YouTube; no app nativo a busca abre dentro da própria JORDAN. Se você disser “na biblioteca” ou escolher Biblioteca JORDAN acima, ela dá play nos arquivos locais e funciona offline.</p>
           </article>
           <article class="hud-panel system-card theme-card">
             <span>VISUAL CORE</span>
@@ -681,6 +700,17 @@
             <strong id="offlineSpeechStatus">Verificando suporte...</strong>
             <button id="offlineSpeechButton" class="hud-button small">PREPARAR PT-BR LOCAL</button>
             <p class="system-description">Quando o navegador oferecer reconhecimento local, a JORDAN pode baixar o pacote PT-BR e ouvir sem enviar a fala ao serviço remoto. Se não houver suporte, ela mantém o reconhecimento normal.</p>
+          </article>
+
+          <article class="hud-panel system-card native-download-card">
+            <span>BAIXAR JORDAN NATIVA</span>
+            <strong>GitHub Releases · builds oficiais do projeto</strong>
+            <div class="native-download-grid">
+              <button class="native-download-button" data-native-download="windows"><b>WINDOWS</b><small>.EXE / x64</small></button>
+              <button class="native-download-button" data-native-download="android"><b>ANDROID</b><small>.APK universal</small></button>
+              <button class="native-download-button" data-native-download="ios"><b>IPHONE</b><small>.IPA assinada</small></button>
+            </div>
+            <p id="nativeDownloadStatus" class="system-description">Os botões apontam para a release mais recente. Windows e Android podem ser gerados automaticamente pelo GitHub Actions. O IPA precisa de assinatura Apple válida para instalar em um iPhone real.</p>
           </article>
 
           <article class="hud-panel system-card">
@@ -969,7 +999,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.12.0";
+    const JORDAN_ASSET_VERSION = "0.13.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

@@ -1,5 +1,5 @@
-const CORE_VERSION = "1.0";
-const HISTORY_KEY = "jordan.manual-core-context-v1";
+const CORE_VERSION = "2.0";
+const HISTORY_KEY = "jordan.manual-core-context-v2";
 const MAX_HISTORY = 16;
 
 function normalizeText(value = "") {
@@ -156,6 +156,13 @@ function makeJoke() {
   return choose(jokes)();
 }
 
+
+function looksLikeQuestionOrRequest(original = "", normalized = "") {
+  const text = normalized || normalizeText(original);
+  if (/[?？]\s*$/.test(String(original).trim())) return true;
+  return /^(?:quem|o que|oque|qual|quais|como|onde|quando|por que|porque|me diga|me fale|me explica|explique|me ensine|ensine|me cita|cite|liste|quero saber|voce conhece|você conhece|o que acontece|oque acontece|o que aconteceria|oque aconteceria)\b/.test(text);
+}
+
 function topicFromText(raw = "") {
   const stop = new Set(["jordan","voce","eu","meu","minha","um","uma","o","a","os","as","de","do","da","dos","das","que","e","em","no","na","para","pra","por","com","isso","isto","aquilo","me","te","se","como","qual","quem","onde","quando","porque"]);
   const words = normalizeText(raw)
@@ -206,7 +213,7 @@ export class ManualCoreService {
       available: this.enabled,
       local: true,
       engine: `JORDAN MANUAL CORE V${CORE_VERSION}`,
-      model: "LOCAL RULE + CONTEXT ENGINE",
+      model: "LOCAL TASK ENGINE + CONTEXT + OPTIONAL ON-DEVICE LLM",
       history: this.history.length,
       reason: this.enabled ? null : "disabled"
     };
@@ -218,7 +225,9 @@ export class ManualCoreService {
       ["math", Boolean(findMathExpression("calcule 12 * (3 + 2)"))],
       ["chess", Boolean(extractChessMove("jogue e2 para e4"))],
       ["location", extractNearbyCategory("farmácia mais próxima") === "pharmacy"],
-      ["context", Array.isArray(this.history)]
+      ["context", Array.isArray(this.history)],
+      ["native-action", Boolean(extractApp("abra o youtube"))],
+      ["general-question", looksLikeQuestionOrRequest("Você conhece o mar?", normalizeText("Você conhece o mar?"))]
     ];
     const passed = tests.filter(([, ok]) => ok).length;
     return {
@@ -226,7 +235,7 @@ export class ManualCoreService {
       available: true,
       local: true,
       engine: `JORDAN MANUAL CORE V${CORE_VERSION}`,
-      model: "LOCAL RULE + CONTEXT ENGINE",
+      model: "LOCAL TASK ENGINE + CONTEXT + OPTIONAL ON-DEVICE LLM",
       tests: tests.map(([name, ok]) => ({ name, ok })),
       passed,
       total: tests.length
@@ -296,6 +305,24 @@ export class ManualCoreService {
       );
     }
 
+    if (!result && /\b(?:seu core|manual core|core da jordan|cerebro|cérebro)\b.*\b(?:ligado|ativo|online|funcionando|esta|está)\b|^(?:seu core|o core) (?:esta|está) ligado[?!. ]*$/.test(text)) {
+      intent = "core-status";
+      const status = await this._tool("get_system_status", { target: "core" }, toolHandlers, onToolCall).catch(() => ({ core: true }));
+      result = this._result(status.core === false ? "Meu Manual Core está desligado." : "Sim. Meu Manual Core está ligado e processando esta conversa localmente.", { mood: "confident" });
+    }
+
+    if (!result && /\b(?:voce|você)\b.*\b(?:conectad[ao]|tem|esta|está)\b.*\binternet\b|\binternet\b.*\b(?:ligada|ativa|online)\b/.test(text)) {
+      intent = "internet-status";
+      const status = await this._tool("get_system_status", { target: "internet" }, toolHandlers, onToolCall).catch(() => ({ online: Boolean(context?.online) }));
+      result = this._result(status.online ? "Sim. Neste momento eu tenho conexão com a internet." : "Não. Neste momento estou sem conexão com a internet, então vou depender das funções locais.", { mood: status.online ? "confident" : "serious" });
+    }
+
+    if (!result && /\b(?:app nativo|modo nativo|aplicativo|windows|android|iphone|ios)\b.*\b(?:rodando|ativo|modo|plataforma|versao|versão)\b/.test(text)) {
+      intent = "native-status";
+      const status = await this._tool("get_system_status", { target: "native" }, toolHandlers, onToolCall).catch(() => ({ native: false, platform: "web" }));
+      result = this._result(status.native ? `Estou rodando como aplicativo nativo em ${status.platform}.` : "Agora eu estou rodando no modo web. O Native Core entra quando você abre a versão instalada da JORDAN.", { mood: "neutral" });
+    }
+
     if (!result && /\b(?:voce consegue|voce sabe|da pra voce|pode)\b.*\b(?:calcular|fazer conta|matematica)\b/.test(text)) {
       intent = "math-capability";
       result = this._result("Consigo. Meu cálculo é local e não usa API. Pode mandar algo como “(18 + 7) * 4”, porcentagem, potência, raiz, seno, cosseno e outras funções básicas.", { mood: "excited" });
@@ -304,6 +331,18 @@ export class ManualCoreService {
     if (!result && /\b(?:me conta|conte|fala|manda)\b.*\bpiada\b|\bpiada\b[!?]*$/.test(text)) {
       intent = "joke";
       result = this._result(makeJoke(), { mood: "excited" });
+    }
+
+    // 1.5) Segurança e conhecimento local prioritário. Evita respostas vazias em
+    // situações em que improvisar seria perigoso, como instalações elétricas.
+    if (!result) {
+      try {
+        const knowledge = await this._tool("answer_local_knowledge", { query: original }, toolHandlers, onToolCall);
+        if (knowledge?.text) {
+          intent = knowledge.topic || "local-knowledge";
+          result = this._result(knowledge.text, { mood: knowledge.mood || "neutral", source: knowledge.source || "local-knowledge" });
+        }
+      } catch { /* ferramenta opcional */ }
     }
 
     // 2) Matemática local.
@@ -432,7 +471,8 @@ export class ManualCoreService {
       if (app) {
         intent = "open-app";
         const opened = await this._tool("open_app", { app }, toolHandlers, onToolCall);
-        result = this._result(opened.blocked ? `${opened.app || app} está pronto no link que deixei na tela.` : `Abrindo ${opened.app || app}.`, { mood: "neutral" });
+        const modeText = opened.mode === "jordan-window" || opened.mode === "in-app-browser" ? " dentro da JORDAN" : opened.mode === "deep-link" ? " no aplicativo instalado" : "";
+        result = this._result(opened.ok ? `Abrindo ${opened.app || app}${modeText}.` : `Não consegui abrir ${opened.app || app} agora${opened.reason ? `: ${opened.reason}` : "."}`, { mood: opened.ok ? "confident" : "serious" });
       }
     }
 
@@ -483,6 +523,18 @@ export class ManualCoreService {
       }
     }
 
+    // 10.5) Raciocínio local opcional. Em desktops compatíveis a JORDAN pode usar
+    // o modelo de linguagem embutido no próprio navegador/runtime, sem API key.
+    if (!result && looksLikeQuestionOrRequest(original, text)) {
+      try {
+        const reasoned = await this._tool("reason_general", { query: original }, toolHandlers, onToolCall);
+        if (reasoned?.ok && reasoned.text) {
+          intent = "local-reasoning";
+          result = this._result(reasoned.text, { mood: "curious", source: reasoned.source || "local-reasoning" });
+        }
+      } catch { /* segue para fallback manual */ }
+    }
+
     // 11) Conversa manual dinâmica. Não é uma resposta única pronta: a frase muda de
     // acordo com o formato da mensagem, assunto recente e conteúdo extraído.
     if (!result) {
@@ -504,20 +556,22 @@ export class ManualCoreService {
           `Opa${name ? `, ${name}` : ""}! Tô aqui.`,
           `Ei${name ? `, ${name}` : ""}! O que vamos fazer?`
         ]), { mood: "excited" });
-      } else if (/\?$/.test(original.trim()) || /^(?:quem|o que|oque|qual|quais|como|onde|quando|por que|porque)\b/.test(text)) {
+      } else if (looksLikeQuestionOrRequest(original, text)) {
         intent = "open-question";
-        const subject = topic || this.lastTopic || "essa pergunta";
+        const subject = topic || this.lastTopic || "isso";
         result = this._result(
-          `Eu entendi que a pergunta é sobre ${subject}, mas meu núcleo manual não tem informação suficiente para inventar uma resposta segura. Se isso for pesquisável, diga “pesquise ${subject}”; se for algo da JORDAN, da sua agenda, memória, localização, xadrez ou cálculo, eu consigo agir direto.`,
+          context?.online
+            ? `Eu entendi a pergunta sobre ${subject}, mas não consegui obter uma resposta confiável com meus núcleos locais agora. Posso abrir uma pesquisa dentro da JORDAN, mas não vou fingir que sei o que não consegui confirmar.`
+            : `Eu entendi a pergunta sobre ${subject}, mas estou sem uma fonte local confiável para responder isso agora.`,
           { mood: "curious", understood: true }
         );
       } else {
         intent = "statement";
         const subject = topic || this.lastTopic;
-        const openings = ["Entendi o ponto.", "Tô acompanhando.", "Peguei a ideia.", "Certo, isso muda o contexto."];
+        const openings = ["Entendi.", "Tô acompanhando.", "Peguei a ideia."];
         const followups = subject
-          ? [`O que mais importa pra você nessa parte de ${subject}?`, `Quer que eu faça alguma coisa com isso sobre ${subject}, ou só continue conversando?`, `Se quiser, continua daí; eu vou manter ${subject} como assunto atual.`]
-          : ["Pode continuar; eu vou manter o contexto do que você disser agora.", "Quer que eu faça alguma coisa com isso ou só continue conversando?"];
+          ? [`Vou manter ${subject} no contexto.`, `Se isso virar uma tarefa, me diga o que você quer que eu faça com ${subject}.`, `Pode continuar; eu não vou trocar de assunto sozinha.`]
+          : ["Pode continuar; eu vou manter o contexto.", "Se isso virar uma tarefa, me diga o que você quer que eu faça."];
         result = this._result(`${choose(openings)} ${choose(followups)}`, { mood: "gentle" });
       }
     }

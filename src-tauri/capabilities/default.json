@@ -1,0 +1,6 @@
+{
+  "identifier": "main-capability",
+  "description": "JORDAN local main-window permissions. Remote companion webviews intentionally receive no native IPC capability.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
