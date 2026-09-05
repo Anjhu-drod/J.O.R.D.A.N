@@ -4858,3 +4858,139 @@ body[data-theme="nova"] .fx-runes i:nth-child(even) { color: var(--red); }
 @media (max-width: 720px) {
   .native-download-grid { grid-template-columns: 1fr; }
 }
+
+/* V0.14 · Automation Core */
+.automation-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.automation-card::after {
+  content: "AUTO";
+  position: absolute;
+  right: 18px;
+  top: 14px;
+  font-size: 2.6rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  opacity: .025;
+  pointer-events: none;
+}
+
+.automation-config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 12px;
+}
+
+.automation-config-grid > label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  font-size: .68rem;
+  letter-spacing: .09em;
+  color: var(--text-muted, #a58e92);
+}
+
+.automation-fixed-point {
+  align-content: end;
+}
+
+.automation-field-muted {
+  opacity: .42;
+}
+
+.automation-actions {
+  flex-wrap: wrap;
+}
+
+.automation-voice-macros {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--accent, #ff2748) 24%, transparent);
+}
+
+.automation-macro-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.automation-macro-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.automation-macro-head b {
+  font-size: .72rem;
+  letter-spacing: .1em;
+}
+
+.automation-macro-head small {
+  opacity: .62;
+}
+
+.automation-macro-editor {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.5fr) minmax(120px, .8fr) minmax(100px, .7fr) auto;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.automation-macro-list {
+  display: grid;
+  gap: 7px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.automation-macro-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #ff2748) 20%, transparent);
+  background: rgba(255,255,255,.018);
+}
+
+.automation-macro-row > div {
+  display: grid;
+  gap: 3px;
+}
+
+.automation-macro-row b {
+  font-size: .75rem;
+}
+
+.automation-macro-row small {
+  opacity: .62;
+  font-size: .65rem;
+}
+
+.automation-empty {
+  margin: 0;
+  padding: 8px 0;
+}
+
+@media (max-width: 980px) {
+  .automation-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .automation-macro-editor { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 620px) {
+  .automation-config-grid,
+  .automation-macro-editor { grid-template-columns: 1fr; }
+  .automation-macro-head { align-items: flex-start; flex-direction: column; }
+}
+.automation-config-grid > .automation-fixed-point {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  font-size: .68rem;
+  letter-spacing: .09em;
+  color: var(--text-muted, #a58e92);
+}

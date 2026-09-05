@@ -1,6 +1,6 @@
 [package]
 name = "jordan"
-version = "0.13.0"
+version = "0.14.0"
 description = "JORDAN Personal Intelligence"
 authors = ["Jhuan Alexandre"]
 edition = "2021"

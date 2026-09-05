@@ -1,0 +1,24 @@
+CRIADOS
+- js/automationCoreService.js
+- PATCH_V0.14.0_AUTOMATION_CORE.md
+- FILES_V0.14.txt
+
+ALTERADOS
+- index.html
+- css/styles.css
+- sw.js
+- package.json
+- README.md
+- NATIVE_APP_SETUP.md
+- scripts/check-native.mjs
+- js/app.js
+- js/ui.js
+- js/nativeBridgeService.js
+- js/manualCoreService.js
+- js/generalKnowledgeService.js
+- src-tauri/Cargo.toml
+- src-tauri/tauri.conf.json
+- src-tauri/src/lib.rs
+
+REMOVIDOS
+- nenhum

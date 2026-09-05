@@ -10,6 +10,7 @@ const required = [
   "src-tauri/src/main.rs",
   "src-tauri/capabilities/default.json",
   "js/nativeBridgeService.js",
+  "js/automationCoreService.js",
   "js/localReasoningService.js"
 ];
 
@@ -24,7 +25,7 @@ for (const item of required) {
 }
 
 const config = JSON.parse(readFileSync(resolve(root, "src-tauri/tauri.conf.json"), "utf8"));
-if (config.version !== "0.13.0") {
+if (config.version !== "0.14.0") {
   console.error(`Unexpected native version: ${config.version}`);
   failed = true;
 }

@@ -91,6 +91,28 @@ export class JordanUI {
       nativeAutostartToggle: document.querySelector("#nativeAutostartToggle"),
       minimizeJordanButton: document.querySelector("#minimizeJordanButton"),
       backgroundJordanButton: document.querySelector("#backgroundJordanButton"),
+      automationCoreStatus: document.querySelector("#automationCoreStatus"),
+      automationRuntimeBadge: document.querySelector("#automationRuntimeBadge"),
+      automationCoreToggle: document.querySelector("#automationCoreToggle"),
+      automationActionSelect: document.querySelector("#automationActionSelect"),
+      automationIntervalMs: document.querySelector("#automationIntervalMs"),
+      automationKeyField: document.querySelector("#automationKeyField"),
+      automationKeyInput: document.querySelector("#automationKeyInput"),
+      automationFixedPointToggle: document.querySelector("#automationFixedPointToggle"),
+      automationPointX: document.querySelector("#automationPointX"),
+      automationPointY: document.querySelector("#automationPointY"),
+      automationCaptureCursorButton: document.querySelector("#automationCaptureCursorButton"),
+      automationTestButton: document.querySelector("#automationTestButton"),
+      automationStartButton: document.querySelector("#automationStartButton"),
+      automationStopButton: document.querySelector("#automationStopButton"),
+      automationVoiceMacrosToggle: document.querySelector("#automationVoiceMacrosToggle"),
+      automationSilentMacrosToggle: document.querySelector("#automationSilentMacrosToggle"),
+      automationMacroPhrase: document.querySelector("#automationMacroPhrase"),
+      automationMacroAction: document.querySelector("#automationMacroAction"),
+      automationMacroValue: document.querySelector("#automationMacroValue"),
+      automationMacroAddButton: document.querySelector("#automationMacroAddButton"),
+      automationMacroList: document.querySelector("#automationMacroList"),
+      automationPlatformNote: document.querySelector("#automationPlatformNote"),
       localReasoningStatus: document.querySelector("#localReasoningStatus"),
       prepareLocalReasoningButton: document.querySelector("#prepareLocalReasoningButton"),
       nativeDownloadStatus: document.querySelector("#nativeDownloadStatus"),
@@ -1395,6 +1417,74 @@ export class JordanUI {
       energy: Number(this.elements.voiceTuneEnergy?.value || 1),
       expressiveness: Number(this.elements.voiceTuneExpressiveness?.value || 1)
     };
+  }
+
+  setAutomationCoreStatus(snapshot = {}) {
+    const status = this.elements.automationCoreStatus;
+    const badge = this.elements.automationRuntimeBadge;
+    const caps = snapshot.capabilities || snapshot;
+    const runtime = snapshot.runtime || {};
+    const platform = String(caps.platform || "web").toUpperCase();
+    const globalInput = Boolean(caps.global_input);
+
+    if (status) {
+      if (globalInput) status.textContent = `${platform} · MOUSE + TECLADO NATIVOS`;
+      else if (caps.reason === "android-accessibility-service-required") status.textContent = "ANDROID · ACCESSIBILITY SERVICE NECESSÁRIO";
+      else if (caps.reason === "ios-global-input-not-available") status.textContent = "IPHONE · AUTOMAÇÃO GLOBAL BLOQUEADA PELO IOS";
+      else status.textContent = `${platform} · AUTOMAÇÃO GLOBAL INDISPONÍVEL`;
+    }
+
+    if (badge) {
+      badge.classList.toggle("online", globalInput || Boolean(runtime.running));
+      badge.classList.toggle("offline", !globalInput);
+      const label = badge.querySelector("b");
+      if (label) {
+        label.textContent = runtime.running
+          ? `AUTOCLIQUE ATIVO · ${runtime.count || 0} AÇÕES`
+          : globalInput ? "AUTOMATION CORE · READY" : "AUTOMATION CORE · LIMITADO";
+      }
+    }
+
+    if (this.elements.automationStopButton) this.elements.automationStopButton.disabled = !runtime.running;
+    if (this.elements.automationStartButton) this.elements.automationStartButton.disabled = !globalInput || runtime.running;
+    if (this.elements.automationTestButton) this.elements.automationTestButton.disabled = !globalInput;
+    if (this.elements.automationCaptureCursorButton) this.elements.automationCaptureCursorButton.disabled = platform !== "WINDOWS";
+  }
+
+  renderAutomationMacros(macros = [], describeAction = null) {
+    const container = this.elements.automationMacroList;
+    if (!container) return;
+    container.innerHTML = "";
+
+    if (!macros.length) {
+      const empty = document.createElement("p");
+      empty.className = "system-description automation-empty";
+      empty.textContent = "Nenhum atalho de voz criado ainda.";
+      container.appendChild(empty);
+      return;
+    }
+
+    for (const macro of macros) {
+      const row = document.createElement("article");
+      row.className = "automation-macro-row";
+      row.dataset.macroId = macro.id;
+
+      const text = document.createElement("div");
+      const phrase = document.createElement("b");
+      phrase.textContent = `“${macro.phrase}”`;
+      const action = document.createElement("small");
+      action.textContent = typeof describeAction === "function" ? describeAction(macro.action) : macro.action?.kind || "ação";
+      text.append(phrase, action);
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "hud-button small danger-outline";
+      remove.dataset.automationMacroRemove = macro.id;
+      remove.textContent = "REMOVER";
+
+      row.append(text, remove);
+      container.appendChild(row);
+    }
   }
 
   setNotificationStatus(permission) {

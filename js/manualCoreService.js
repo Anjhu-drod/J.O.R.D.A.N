@@ -1,6 +1,7 @@
-const CORE_VERSION = "2.0";
+const CORE_VERSION = "2.1";
 const HISTORY_KEY = "jordan.manual-core-context-v2";
-const MAX_HISTORY = 16;
+const MAX_HISTORY = 20;
+const PENDING_KEY = "jordan.manual-core-pending-v2";
 
 function normalizeText(value = "") {
   return String(value || "")
@@ -163,6 +164,43 @@ function looksLikeQuestionOrRequest(original = "", normalized = "") {
   return /^(?:quem|o que|oque|qual|quais|como|onde|quando|por que|porque|me diga|me fale|me explica|explique|me ensine|ensine|me cita|cite|liste|quero saber|voce conhece|você conhece|o que acontece|oque acontece|o que aconteceria|oque aconteceria)\b/.test(text);
 }
 
+function extractAutomationIntervalMs(text = "") {
+  const normalized = normalizeText(text);
+  const match = normalized.match(/(?:a cada|intervalo(?: de)?|cada|de)\s*(\d+(?:[.,]\d+)?)\s*(ms|milissegundos?|s|segundos?|min|minutos?)\b/);
+  if (!match) return 250;
+  const value = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(value)) return 250;
+  const unit = match[2];
+  if (/^s|segundo/.test(unit)) return Math.round(value * 1000);
+  if (/^min/.test(unit)) return Math.round(value * 60000);
+  return Math.round(value);
+}
+
+function extractAutomationAction(raw = "") {
+  const original = withoutWakeWord(raw);
+  const text = normalizeText(original);
+  const point = text.match(/\bx\s*(-?\d+)\s*(?:[,; ]+|e\s+)y\s*(-?\d+)\b/);
+  if (/\b(?:mouse direito|clique direito|botao direito|botão direito)\b/.test(text)) {
+    return { kind: "mouse_right", x: point ? Number(point[1]) : null, y: point ? Number(point[2]) : null };
+  }
+  if (/\b(?:mouse do meio|clique do meio|botao do meio|botão do meio)\b/.test(text)) {
+    return { kind: "mouse_middle", x: point ? Number(point[1]) : null, y: point ? Number(point[2]) : null };
+  }
+  if (/\b(?:mouse esquerdo|clique esquerdo|botao esquerdo|botão esquerdo|autoclick|auto clique)\b/.test(text) && !/\btecla\b/.test(text)) {
+    return { kind: point ? "screen_tap" : "mouse_left", x: point ? Number(point[1]) : null, y: point ? Number(point[2]) : null };
+  }
+  const keyMatch = original.match(/(?:tecla|aperte|pressione|pressionar)\s+(?:a\s+tecla\s+)?([a-z0-9+_-]{1,40})/i);
+  if (keyMatch?.[1]) return { kind: "key", key: keyMatch[1] };
+  return null;
+}
+
+function extractVoiceMacroDefinition(raw = "") {
+  const original = withoutWakeWord(raw).trim();
+  const match = original.match(/^(?:quando eu disser|quando eu falar|se eu disser|se eu falar)\s+[“\"']?(.+?)[”\"']?\s*,?\s*(?:aperte|pressione|aperta|pressiona)\s+(?:a\s+tecla\s+)?([a-z0-9+_-]{1,40})[.!?]*$/i);
+  if (!match) return null;
+  return { phrase: trimPunctuation(match[1]), kind: "key", key: match[2] };
+}
+
 function topicFromText(raw = "") {
   const stop = new Set(["jordan","voce","eu","meu","minha","um","uma","o","a","os","as","de","do","da","dos","das","que","e","em","no","na","para","pra","por","com","isso","isto","aquilo","me","te","se","como","qual","quem","onde","quando","porque"]);
   const words = normalizeText(raw)
@@ -178,6 +216,7 @@ export class ManualCoreService {
     this.history = [];
     this.lastTopic = "";
     this.lastIntent = "";
+    this.pendingClarification = null;
     this._loadHistory();
   }
 
@@ -191,20 +230,27 @@ export class ManualCoreService {
       if (Array.isArray(parsed)) this.history = parsed.slice(-MAX_HISTORY);
       this.lastTopic = this.history.at(-1)?.topic || "";
       this.lastIntent = this.history.at(-1)?.intent || "";
+      try { this.pendingClarification = JSON.parse(sessionStorage.getItem(PENDING_KEY) || "null"); } catch { this.pendingClarification = null; }
     } catch {
       this.history = [];
+      this.pendingClarification = null;
     }
   }
 
   _saveHistory() {
-    try { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(this.history.slice(-MAX_HISTORY))); } catch { /* private mode */ }
+    try {
+      sessionStorage.setItem(HISTORY_KEY, JSON.stringify(this.history.slice(-MAX_HISTORY)));
+      if (this.pendingClarification) sessionStorage.setItem(PENDING_KEY, JSON.stringify(this.pendingClarification));
+      else sessionStorage.removeItem(PENDING_KEY);
+    } catch { /* private mode */ }
   }
 
   resetConversation() {
     this.history = [];
     this.lastTopic = "";
     this.lastIntent = "";
-    try { sessionStorage.removeItem(HISTORY_KEY); } catch { /* private mode */ }
+    this.pendingClarification = null;
+    try { sessionStorage.removeItem(HISTORY_KEY); sessionStorage.removeItem(PENDING_KEY); } catch { /* private mode */ }
   }
 
   health() {
@@ -227,6 +273,8 @@ export class ManualCoreService {
       ["location", extractNearbyCategory("farmácia mais próxima") === "pharmacy"],
       ["context", Array.isArray(this.history)],
       ["native-action", Boolean(extractApp("abra o youtube"))],
+      ["automation", extractAutomationAction("autoclick mouse direito a cada 100 ms")?.kind === "mouse_right" && extractAutomationIntervalMs("a cada 100 ms") === 100],
+      ["voice-macro", extractVoiceMacroDefinition("quando eu disser haki aperte j")?.key === "j"],
       ["general-question", looksLikeQuestionOrRequest("Você conhece o mar?", normalizeText("Você conhece o mar?"))]
     ];
     const passed = tests.filter(([, ok]) => ok).length;
@@ -250,6 +298,8 @@ export class ManualCoreService {
       intent: intent || "conversation",
       topic: topic || topicFromText(userText)
     };
+    if (Object.prototype.hasOwnProperty.call(result || {}, "pendingClarification")) this.pendingClarification = result.pendingClarification || null;
+    if (result?.clearPending) this.pendingClarification = null;
     this.history.push(item);
     this.history = this.history.slice(-MAX_HISTORY);
     this.lastIntent = item.intent;
@@ -305,6 +355,20 @@ export class ManualCoreService {
       );
     }
 
+    if (!result && /\b(?:automation core|autoclick|auto clique|autoclique)\b.*\b(?:ligado|ativo|rodando|funcionando|status)\b/.test(text)) {
+      intent = "automation-status";
+      const status = await this._tool("automation_status", {}, toolHandlers, onToolCall).catch((error) => ({ ok: false, reason: error.message }));
+      if (status.ok === false) {
+        result = this._result(`Não consegui ler o Automation Core: ${status.reason || "erro desconhecido"}.`, { mood: "serious" });
+      } else if (status.runtime?.running) {
+        result = this._result(`Sim. O autoclique está rodando e já executou ${status.runtime.count || 0} ações.`, { mood: "confident" });
+      } else if (status.capabilities?.global_input) {
+        result = this._result("O Automation Core está pronto, mas o autoclique está parado.", { mood: "neutral" });
+      } else {
+        result = this._result("O Automation Core está configurado, mas esta plataforma não liberou entrada global de mouse/teclado.", { mood: "serious" });
+      }
+    }
+
     if (!result && /\b(?:seu core|manual core|core da jordan|cerebro|cérebro)\b.*\b(?:ligado|ativo|online|funcionando|esta|está)\b|^(?:seu core|o core) (?:esta|está) ligado[?!. ]*$/.test(text)) {
       intent = "core-status";
       const status = await this._tool("get_system_status", { target: "core" }, toolHandlers, onToolCall).catch(() => ({ core: true }));
@@ -333,6 +397,73 @@ export class ManualCoreService {
       result = this._result(makeJoke(), { mood: "excited" });
     }
 
+    // 1.35) Continuação estruturada de perguntas que ficaram aguardando um detalhe.
+    if (!result && this.pendingClarification?.type === "minecraft-iron-farm") {
+      const pending = { ...this.pendingClarification };
+      let matched = false;
+      if (/\bjava\b/.test(text)) { pending.edition = "Java"; matched = true; }
+      if (/\bbedrock\b/.test(text)) { pending.edition = "Bedrock"; matched = true; }
+      const versionMatch = text.match(/\b(\d+\.\d+(?:\.\d+)?)\b/);
+      if (versionMatch) { pending.version = versionMatch[1]; matched = true; }
+
+      if (matched) {
+        this.pendingClarification = pending;
+        topic = "minecraft";
+        intent = "clarification";
+        if (!pending.edition) {
+          result = this._result("Beleza. Falta só me dizer se você joga Minecraft Java ou Bedrock.", { mood: "curious", pendingClarification: pending });
+        } else if (!pending.version) {
+          result = this._result(`Beleza, ${pending.edition}. Agora me diga a versão exata, por exemplo 1.21 ou 1.21.4, porque o projeto da farm pode mudar entre versões.`, { mood: "curious", pendingClarification: pending });
+        } else {
+          try {
+            const knowledge = await this._tool("answer_local_knowledge", { query: `como fazer farm de ferro no Minecraft ${pending.edition} ${pending.version}` }, toolHandlers, onToolCall);
+            if (knowledge?.text) result = this._result(knowledge.text, { mood: knowledge.mood || "neutral", source: knowledge.source || "local-knowledge", clearPending: true });
+          } catch { /* segue para os outros núcleos */ }
+        }
+      }
+    }
+
+    // 1.4) Automation Core: tarefas de mouse/teclado viram ações, não texto.
+    if (!result && /\b(?:pare|parar|desligue|desligar|stop)\b.*\b(?:autoclick|auto clique|autoclique)\b/.test(text)) {
+      intent = "automation-stop";
+      const stopped = await this._tool("automation_stop", {}, toolHandlers, onToolCall).catch((error) => ({ ok: false, reason: error.message }));
+      result = this._result(stopped.ok === false ? `Não consegui parar o Automation Core: ${stopped.reason || "erro desconhecido"}.` : "Autoclique parado.", { mood: stopped.ok === false ? "serious" : "confident" });
+    }
+
+    if (!result) {
+      const macro = extractVoiceMacroDefinition(original);
+      if (macro) {
+        intent = "automation-voice-macro";
+        const saved = await this._tool("add_voice_macro", macro, toolHandlers, onToolCall).catch((error) => ({ ok: false, reason: error.message }));
+        result = this._result(saved.ok === false
+          ? `Entendi o atalho, mas não consegui salvá-lo: ${saved.reason || "Automation Core indisponível"}.`
+          : `Pronto. Quando você disser “${macro.phrase}”, eu vou apertar ${macro.key}.`,
+        { mood: saved.ok === false ? "serious" : "confident" });
+      }
+    }
+
+    if (!result && /\b(?:inicie|iniciar|ligue|ligar|comece|começar|ative|ativar)\b.*\b(?:autoclick|auto clique|autoclique)\b|^\s*(?:autoclick|auto clique|autoclique)\b/.test(text)) {
+      intent = "automation-start";
+      const action = extractAutomationAction(original) || { kind: "mouse_left" };
+      const interval_ms = extractAutomationIntervalMs(original);
+      const started = await this._tool("automation_start", { ...action, interval_ms }, toolHandlers, onToolCall).catch((error) => ({ ok: false, reason: error.message }));
+      result = this._result(started.ok === false
+        ? `Eu entendi o autoclique, mas não consegui iniciar: ${started.reason || "Automation Core indisponível"}.`
+        : `Autoclique iniciado: ${started.action || action.kind}, a cada ${started.interval_ms || interval_ms} ms. Diga “parar autoclick” para encerrar.`,
+      { mood: started.ok === false ? "serious" : "confident" });
+    }
+
+    if (!result && /^(?:aperte|pressione|aperta|pressiona)\b/.test(text)) {
+      const action = extractAutomationAction(original);
+      if (action?.kind === "key") {
+        intent = "automation-key-once";
+        const executed = await this._tool("automation_input_once", action, toolHandlers, onToolCall).catch((error) => ({ ok: false, reason: error.message }));
+        result = this._result(executed.ok === false
+          ? `Eu reconheci a tecla ${action.key}, mas não consegui enviá-la: ${executed.reason || "Automation Core indisponível"}.`
+          : `Apertei ${action.key}.`, { mood: executed.ok === false ? "serious" : "confident" });
+      }
+    }
+
     // 1.5) Segurança e conhecimento local prioritário. Evita respostas vazias em
     // situações em que improvisar seria perigoso, como instalações elétricas.
     if (!result) {
@@ -340,7 +471,7 @@ export class ManualCoreService {
         const knowledge = await this._tool("answer_local_knowledge", { query: original }, toolHandlers, onToolCall);
         if (knowledge?.text) {
           intent = knowledge.topic || "local-knowledge";
-          result = this._result(knowledge.text, { mood: knowledge.mood || "neutral", source: knowledge.source || "local-knowledge" });
+          result = this._result(knowledge.text, { mood: knowledge.mood || "neutral", source: knowledge.source || "local-knowledge", pendingClarification: knowledge.pendingClarification });
         }
       } catch { /* ferramenta opcional */ }
     }

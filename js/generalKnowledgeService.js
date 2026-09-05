@@ -57,11 +57,36 @@ export class GeneralKnowledgeService {
     }
 
     if (/\bfarm de ferro\b.*\bminecraft\b/.test(text) || /\bminecraft\b.*\bfarm de ferro\b/.test(text)) {
+      const edition = /\bjava\b/.test(text) ? "Java" : /\bbedrock\b/.test(text) ? "Bedrock" : null;
+      const version = text.match(/\b(\d+\.\d+(?:\.\d+)?)\b/)?.[1] || null;
+
+      if (edition && version) {
+        return {
+          text: edition === "Java"
+            ? `Beleza: Minecraft Java ${version}. A lógica mais comum de farm de ferro usa aldeões em uma vila artificial, uma condição que provoque a geração dos golems, uma plataforma válida de spawn e um sistema para empurrar os golems até a coleta com funis. Como detalhes de camas, distância, visão do zumbi e área de spawn mudam entre versões, eu já manteria Java ${version} preso no contexto e, se você disser “passo a passo”, eu continuo desse ponto em vez de perguntar tudo de novo.`
+            : `Beleza: Minecraft Bedrock ${version}. Em Bedrock a lógica de vila e geração de golems é diferente da Java, então eu não vou misturar os dois projetos. A base é montar uma vila artificial válida, controlar onde os golems podem nascer e canalizá-los para a coleta. Se você disser “passo a passo”, eu continuo considerando Bedrock ${version}.`,
+          mood: "confident",
+          topic: "minecraft",
+          source: "local-knowledge"
+        };
+      }
+
+      if (edition && !version) {
+        return {
+          text: `Beleza, você joga Minecraft ${edition}. Falta só a versão exata, por exemplo 1.21 ou 1.21.4, porque isso evita eu te passar um layout incompatível.`,
+          mood: "curious",
+          topic: "minecraft",
+          source: "local-knowledge",
+          pendingClarification: { type: "minecraft-iron-farm", edition, version: null }
+        };
+      }
+
       return {
-        text: "Uma farm de ferro no Minecraft explora a geração de golems de ferro perto de aldeões. O projeto muda bastante entre Java e Bedrock e também entre versões. Me diga se você joga Java ou Bedrock e a versão, porque aí eu consigo te orientar sem te passar um modelo incompatível.",
+        text: "Uma farm de ferro no Minecraft explora a geração de golems de ferro perto de aldeões. O projeto muda bastante entre Java e Bedrock e também entre versões. Me diga se você joga Java ou Bedrock e a versão; eu vou manter essas respostas no contexto para não te fazer repetir tudo.",
         mood: "curious",
         topic: "minecraft",
-        source: "local-knowledge"
+        source: "local-knowledge",
+        pendingClarification: { type: "minecraft-iron-farm", edition: null, version: null }
       };
     }
 

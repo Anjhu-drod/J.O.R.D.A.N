@@ -46,6 +46,7 @@ import { safeCalculate } from "./mathService.js";
 import { NativeBridgeService } from "./nativeBridgeService.js";
 import { LocalReasoningService } from "./localReasoningService.js";
 import { GeneralKnowledgeService } from "./generalKnowledgeService.js";
+import { AutomationCoreService } from "./automationCoreService.js";
 
 const calendar = new CalendarService();
 const memory = new MemoryService();
@@ -66,6 +67,7 @@ const chess = new JordanChessService();
 const nativeBridge = new NativeBridgeService();
 const localReasoning = new LocalReasoningService();
 const generalKnowledge = new GeneralKnowledgeService();
+const automation = new AutomationCoreService(nativeBridge);
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
   location: locationService,
@@ -112,6 +114,7 @@ let chessSelectedSquare = null;
 let chessLegalTargets = [];
 let chessFlipped = false;
 let chessThinking = false;
+let automationRuntimeTimer = null;
 
 const voice = new VoiceService({
   silenceMs: 2000,
@@ -272,6 +275,12 @@ async function initialize() {
 
   const nativeStatus = await nativeBridge.init().catch((error) => ({ native: false, platform: "web", lastError: error.message }));
   ui.setNativeRuntimeStatus?.(nativeStatus);
+  const automationSnapshot = await automation.init().catch((error) => ({
+    capabilities: { platform: nativeStatus.platform || "web", native: nativeStatus.native, global_input: false, reason: error.message },
+    runtime: { running: false, count: 0 }
+  }));
+  applyAutomationSnapshot(automationSnapshot);
+  startAutomationRuntimePolling();
   localReasoning.status().then(async (status) => {
     ui.setLocalReasoningStatus?.(status);
     if (status?.availability === "available" && !status?.ready) {
@@ -601,6 +610,83 @@ function updateManualCoreStatus() {
   ui.setManualCoreStatus?.({ ...health, enabled: manualCoreEnabled });
 }
 
+
+function automationActionFromUi() {
+  const kind = ui.elements.automationActionSelect?.value || "mouse_left";
+  return {
+    kind,
+    key: ui.elements.automationKeyInput?.value?.trim() || "j",
+    fixedPoint: kind === "screen_tap" || Boolean(ui.elements.automationFixedPointToggle?.checked),
+    x: Number(ui.elements.automationPointX?.value || 0),
+    y: Number(ui.elements.automationPointY?.value || 0)
+  };
+}
+
+function syncAutomationFieldVisibility() {
+  const kind = ui.elements.automationActionSelect?.value || "mouse_left";
+  const keyMode = kind === "key";
+  const fixedMode = kind === "screen_tap" || Boolean(ui.elements.automationFixedPointToggle?.checked);
+  if (ui.elements.automationKeyField) ui.elements.automationKeyField.classList.toggle("automation-field-muted", !keyMode);
+  if (ui.elements.automationKeyInput) ui.elements.automationKeyInput.disabled = !keyMode;
+  if (ui.elements.automationFixedPointToggle) {
+    ui.elements.automationFixedPointToggle.disabled = kind === "screen_tap";
+    if (kind === "screen_tap") ui.elements.automationFixedPointToggle.checked = true;
+  }
+  if (ui.elements.automationPointX) ui.elements.automationPointX.disabled = !fixedMode;
+  if (ui.elements.automationPointY) ui.elements.automationPointY.disabled = !fixedMode;
+}
+
+function renderAutomationMacros() {
+  const snapshot = automation.snapshot();
+  ui.renderAutomationMacros?.(snapshot.macros, (action) => automation.describeAction(action));
+}
+
+function applyAutomationSnapshot(snapshot = automation.snapshot()) {
+  const state = snapshot?.enabled === undefined ? automation.snapshot() : snapshot;
+  const action = state.action || automation.state?.action || { kind: "mouse_left", key: "j", fixedPoint: false, x: 0, y: 0 };
+
+  if (ui.elements.automationCoreToggle) ui.elements.automationCoreToggle.checked = state.enabled !== false;
+  if (ui.elements.automationVoiceMacrosToggle) ui.elements.automationVoiceMacrosToggle.checked = state.voiceMacrosEnabled !== false;
+  if (ui.elements.automationSilentMacrosToggle) ui.elements.automationSilentMacrosToggle.checked = state.silentVoiceMacros !== false;
+  if (ui.elements.automationActionSelect) ui.elements.automationActionSelect.value = action.kind || "mouse_left";
+  if (ui.elements.automationIntervalMs) ui.elements.automationIntervalMs.value = String(state.intervalMs || 250);
+  if (ui.elements.automationKeyInput) ui.elements.automationKeyInput.value = action.key || "j";
+  if (ui.elements.automationFixedPointToggle) ui.elements.automationFixedPointToggle.checked = Boolean(action.fixedPoint || action.kind === "screen_tap");
+  if (ui.elements.automationPointX) ui.elements.automationPointX.value = String(Number(action.x || 0));
+  if (ui.elements.automationPointY) ui.elements.automationPointY.value = String(Number(action.y || 0));
+
+  const caps = state.capabilities || automation.capabilities || {};
+  if (ui.elements.automationPlatformNote) {
+    if (caps.platform === "windows" && caps.global_input) {
+      ui.elements.automationPlatformNote.textContent = "Windows nativo: mouse, teclado, combinações e coordenadas funcionam globalmente pelo SendInput. Para parar a qualquer momento, use PARAR ou diga ‘parar autoclick’.";
+    } else if (caps.platform === "android") {
+      ui.elements.automationPlatformNote.textContent = "Android: a interface e os comandos já ficam salvos, mas tocar em outros apps exige um Accessibility Service com permissão explícita do usuário. Esse bridge móvel ainda não está ativado nesta build.";
+    } else if (caps.platform === "ios") {
+      ui.elements.automationPlatformNote.textContent = "iPhone: a JORDAN pode automatizar a própria interface e ações permitidas pelo iOS, mas um app comum não pode injetar toques arbitrários em outros aplicativos.";
+    } else {
+      ui.elements.automationPlatformNote.textContent = "No site, a JORDAN não pode enviar cliques/teclas globais. Instale a versão Windows para liberar o Automation Core do sistema.";
+    }
+  }
+
+  syncAutomationFieldVisibility();
+  renderAutomationMacros();
+  ui.setAutomationCoreStatus?.({ ...state, capabilities: caps, runtime: state.runtime || automation.runtime || {} });
+}
+
+async function refreshAutomationRuntime() {
+  const runtime = await automation.refreshRuntime().catch(() => automation.runtime);
+  ui.setAutomationCoreStatus?.({ ...automation.snapshot(), runtime });
+  return runtime;
+}
+
+function startAutomationRuntimePolling() {
+  clearInterval(automationRuntimeTimer);
+  automationRuntimeTimer = setInterval(() => {
+    if (!automation.runtime?.running && document.hidden) return;
+    refreshAutomationRuntime().catch(() => null);
+  }, 800);
+}
+
 function renderSystemCommandLearning() {
   const container = ui.elements.systemCommandList;
   if (!container) return;
@@ -921,6 +1007,111 @@ function bindEvents() {
     registerInteraction();
     const result = await nativeBridge.hideToBackground();
     if (!result.ok) ui.toast("Segundo plano nativo só funciona na versão instalada.", "JORDAN NATIVE");
+  });
+
+  ui.elements.automationCoreToggle?.addEventListener("change", async (event) => {
+    registerInteraction();
+    automation.configure({ enabled: Boolean(event.target.checked) });
+    if (!event.target.checked && automation.runtime?.running) await automation.stop().catch(() => null);
+    applyAutomationSnapshot();
+    ui.toast(event.target.checked ? "Automation Core ativado." : "Automation Core desativado.", "JORDAN AUTOMATION");
+  });
+
+  ui.elements.automationVoiceMacrosToggle?.addEventListener("change", (event) => {
+    registerInteraction();
+    automation.configure({ voiceMacrosEnabled: Boolean(event.target.checked) });
+    applyAutomationSnapshot();
+  });
+
+  ui.elements.automationSilentMacrosToggle?.addEventListener("change", (event) => {
+    registerInteraction();
+    automation.configure({ silentVoiceMacros: Boolean(event.target.checked) });
+    applyAutomationSnapshot();
+  });
+
+  ui.elements.automationActionSelect?.addEventListener("change", () => {
+    registerInteraction();
+    automation.setAction(automationActionFromUi());
+    syncAutomationFieldVisibility();
+  });
+  ui.elements.automationFixedPointToggle?.addEventListener("change", () => {
+    automation.setAction(automationActionFromUi());
+    syncAutomationFieldVisibility();
+  });
+  ui.elements.automationKeyInput?.addEventListener("change", () => automation.setAction(automationActionFromUi()));
+  ui.elements.automationPointX?.addEventListener("change", () => automation.setAction(automationActionFromUi()));
+  ui.elements.automationPointY?.addEventListener("change", () => automation.setAction(automationActionFromUi()));
+  ui.elements.automationIntervalMs?.addEventListener("change", (event) => {
+    const interval = automation.setInterval(event.target.value);
+    event.target.value = String(interval);
+  });
+
+  ui.elements.automationCaptureCursorButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const result = await automation.captureCursor();
+    if (!result.ok) {
+      ui.toast(result.reason || "Não consegui ler a posição do cursor.", "JORDAN AUTOMATION", 7000);
+      return;
+    }
+    applyAutomationSnapshot();
+    ui.toast(`Posição capturada: X${result.x} Y${result.y}.`, "JORDAN AUTOMATION");
+  });
+
+  ui.elements.automationTestButton?.addEventListener("click", async () => {
+    registerInteraction();
+    automation.setAction(automationActionFromUi());
+    const result = await automation.executeOnce();
+    await refreshAutomationRuntime();
+    ui.toast(result.ok ? `Executado: ${automation.describeAction()}.` : `Não consegui executar: ${result.reason || "ação indisponível"}`, "JORDAN AUTOMATION", 7000);
+  });
+
+  ui.elements.automationStartButton?.addEventListener("click", async () => {
+    registerInteraction();
+    const action = automationActionFromUi();
+    const intervalMs = Number(ui.elements.automationIntervalMs?.value || 250);
+    const result = await automation.start({ action, intervalMs });
+    await refreshAutomationRuntime();
+    ui.toast(result.ok
+      ? `Autoclique iniciado: ${automation.describeAction(action)} a cada ${automation.state.intervalMs} ms.`
+      : `Não consegui iniciar: ${result.reason || "Automation Core indisponível"}`, "JORDAN AUTOMATION", 8000);
+  });
+
+  ui.elements.automationStopButton?.addEventListener("click", async () => {
+    registerInteraction();
+    await automation.stop().catch(() => null);
+    await refreshAutomationRuntime();
+    ui.toast("Autoclique parado.", "JORDAN AUTOMATION");
+  });
+
+  ui.elements.automationMacroAction?.addEventListener("change", (event) => {
+    if (ui.elements.automationMacroValue) {
+      ui.elements.automationMacroValue.disabled = event.target.value !== "key";
+      ui.elements.automationMacroValue.placeholder = event.target.value === "key" ? "tecla: j" : "não precisa";
+    }
+  });
+
+  ui.elements.automationMacroAddButton?.addEventListener("click", () => {
+    registerInteraction();
+    try {
+      const kind = ui.elements.automationMacroAction?.value || "key";
+      const macro = automation.addMacro({
+        phrase: ui.elements.automationMacroPhrase?.value || "",
+        action: { kind, key: kind === "key" ? (ui.elements.automationMacroValue?.value || "j") : "" }
+      });
+      if (ui.elements.automationMacroPhrase) ui.elements.automationMacroPhrase.value = "";
+      renderAutomationMacros();
+      ui.toast(`Atalho criado: “${macro.phrase}” → ${automation.describeAction(macro.action)}.`, "JORDAN AUTOMATION");
+    } catch (error) {
+      ui.toast(error.message, "JORDAN AUTOMATION");
+    }
+  });
+
+  ui.elements.automationMacroList?.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-automation-macro-remove]");
+    if (!button) return;
+    automation.removeMacro(button.dataset.automationMacroRemove);
+    renderAutomationMacros();
+    ui.toast("Atalho de voz removido.", "JORDAN AUTOMATION");
   });
 
   ui.elements.prepareLocalReasoningButton?.addEventListener("click", async () => {
@@ -1550,6 +1741,7 @@ async function buildManualCoreContext() {
     availableApps: appLauncher.listTargets().map((item) => item.id),
     native: nativeBridge.status(),
     localReasoning: localReasoning.snapshot(),
+    automation: automation.snapshot(),
     chess: chessCoreState()
   };
 }
@@ -1708,6 +1900,41 @@ function createManualCoreToolHandlers() {
       return { ...opened, app: target.label, url: target.url, blocked: !opened.ok };
     },
 
+    async add_voice_macro({ phrase = "", kind = "key", key = "j" } = {}) {
+      try {
+        const macro = automation.addMacro({ phrase, action: { kind, key } });
+        renderAutomationMacros();
+        return { ok: true, macro };
+      } catch (error) {
+        return { ok: false, reason: error.message };
+      }
+    },
+
+    async automation_input_once({ kind = "mouse_left", key = "j", x = null, y = null } = {}) {
+      const action = { kind, key, fixedPoint: x !== null && y !== null, x: Number(x || 0), y: Number(y || 0) };
+      const result = await automation.executeOnce(action);
+      await refreshAutomationRuntime().catch(() => null);
+      return { ...result, action: automation.describeAction(action) };
+    },
+
+    async automation_start({ kind = "mouse_left", key = "j", x = null, y = null, interval_ms = 250 } = {}) {
+      const action = { kind, key, fixedPoint: x !== null && y !== null, x: Number(x || 0), y: Number(y || 0) };
+      const result = await automation.start({ action, intervalMs: interval_ms });
+      await refreshAutomationRuntime().catch(() => null);
+      return { ...result, action: automation.describeAction(action), interval_ms: automation.state.intervalMs };
+    },
+
+    async automation_stop() {
+      const result = await automation.stop();
+      await refreshAutomationRuntime().catch(() => null);
+      return result;
+    },
+
+    async automation_status() {
+      const runtime = await automation.refreshRuntime().catch(() => automation.runtime);
+      return { ok: true, runtime, capabilities: automation.capabilities, enabled: automation.state.enabled };
+    },
+
     async get_system_status({ target = "all" } = {}) {
       const native = nativeBridge.status();
       const payload = {
@@ -1720,7 +1947,8 @@ function createManualCoreToolHandlers() {
         platform: native.platform,
         backgroundCapable: native.backgroundCapable,
         autostart: native.autostart,
-        localReasoning: localReasoning.snapshot()
+        localReasoning: localReasoning.snapshot(),
+        automation: automation.snapshot()
       };
       return payload;
     },
@@ -1909,6 +2137,32 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     if (voiceEnabled) await voice.speak(schedulePresence.text, { volume: assistantVolume, mood: "neutral" });
     ui.setPresenceState?.(presence.state());
     return;
+  }
+
+  if (fromVoice) {
+    const voiceAutomation = await automation.handleVoiceTranscript(text).catch((error) => ({ handled: true, ok: false, reason: error.message }));
+    if (voiceAutomation?.handled) {
+      ui.addMessage("VOCÊ", text);
+      await refreshAutomationRuntime().catch(() => null);
+      if (voiceAutomation.ok) {
+        if (!voiceAutomation.silent || voiceAutomation.type === "stop") {
+          const message = voiceAutomation.type === "stop"
+            ? "Autoclique parado."
+            : `Executado: ${automation.describeAction(voiceAutomation.macro?.action)}.`;
+          ui.addMessage("JORDAN", message);
+          if (voiceEnabled && voice.synthesisSupported) await voice.speak(message, { volume: assistantVolume, mood: "confident" });
+        } else {
+          ui.setStatus(`AUTOMATION · ${automation.describeAction(voiceAutomation.macro?.action).toUpperCase()}`);
+        }
+      } else {
+        const message = `O atalho foi reconhecido, mas não consegui executar a ação: ${voiceAutomation.result?.reason || voiceAutomation.reason || "Automation Core indisponível"}.`;
+        ui.addMessage("JORDAN", message);
+        if (voiceEnabled && voice.synthesisSupported) await voice.speak(message, { volume: assistantVolume, mood: "serious" });
+      }
+      telemetry.setExecution("idle");
+      if (voice.alwaysListening) setTimeout(() => voice.start({ always: true }), 120);
+      return;
+    }
   }
 
   ui.addMessage("VOCÊ", text);

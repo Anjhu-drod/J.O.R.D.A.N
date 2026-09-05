@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.13.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.14.0" />
 </head>
 <body data-theme="nova" class="auth-locked">
   <div class="fx-grid"></div>
@@ -564,7 +564,7 @@
               <button id="checkVoiceCoreButton" class="hud-button small">TESTAR CONEXÃO</button>
               <button id="testVoiceButton" class="hud-button small primary">OUVIR JORDAN</button>
             </div>
-            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Na V0.13 ela usa somente o Voice Core local; nenhuma chave de IA é necessária. A contingência do dispositivo continua como última rede de segurança para a JORDAN não ficar muda. Para usar a mesma Spark em outro aparelho, exponha o Voice Core por um endpoint HTTPS acessível a ele.</p>
+            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Na V0.14 ela usa somente o Voice Core local; nenhuma chave de IA é necessária. A contingência do dispositivo continua como última rede de segurança para a JORDAN não ficar muda. Para usar a mesma Spark em outro aparelho, exponha o Voice Core por um endpoint HTTPS acessível a ele.</p>
           </article>
           <article class="hud-panel system-card manual-core-card">
             <span>JORDAN MANUAL CORE</span>
@@ -575,7 +575,7 @@
               <button id="checkManualCoreButton" class="hud-button small">TESTAR MANUAL CORE</button>
               <button id="resetManualConversationButton" class="hud-button small">REINICIAR CONTEXTO</button>
             </div>
-            <p class="system-description">O Manual Core V2 é o planejador de tarefas da JORDAN. Ele roda localmente, não usa chave de API e agora separa melhor conversa, perguntas, estado do sistema e ações reais. No app nativo ele pode mandar tarefas para o sistema operacional em vez de só devolver um link.</p>
+            <p class="system-description">O Manual Core V2.1 é o planejador de tarefas da JORDAN. Ele roda localmente, não usa chave de API e agora separa melhor conversa, perguntas, estado do sistema e ações reais. No app nativo ele pode mandar tarefas para o sistema operacional em vez de só devolver um link.</p>
           </article>
           <article class="hud-panel system-card native-runtime-card">
             <span>JORDAN NATIVE CORE</span>
@@ -588,6 +588,69 @@
             </div>
             <p class="system-description">No Windows, fechar a janela esconde a JORDAN na bandeja em vez de matar o processo. No Android e iPhone o app usa os recursos permitidos por cada sistema; o iOS não permite um assistente arbitrário escutando para sempre em segundo plano.</p>
           </article>
+          <article class="hud-panel system-card automation-card">
+            <span>JORDAN AUTOMATION CORE</span>
+            <strong id="automationCoreStatus">WEB MODE · AUTOMAÇÃO GLOBAL INDISPONÍVEL</strong>
+            <div id="automationRuntimeBadge" class="voice-core-status"><i></i><b>AGUARDANDO NATIVE CORE</b></div>
+            <label class="hud-toggle compact"><input id="automationCoreToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR AUTOMATION CORE</b></label>
+
+            <div class="automation-config-grid">
+              <label>AÇÃO
+                <select id="automationActionSelect" class="system-input">
+                  <option value="mouse_left">Mouse · clique esquerdo</option>
+                  <option value="mouse_right">Mouse · clique direito</option>
+                  <option value="mouse_middle">Mouse · clique do meio</option>
+                  <option value="key">Tecla / combinação</option>
+                  <option value="screen_tap">Tela · coordenada X/Y</option>
+                </select>
+              </label>
+              <label>INTERVALO (ms)
+                <input id="automationIntervalMs" class="system-input" type="number" min="25" max="3600000" step="25" value="250" />
+              </label>
+              <label id="automationKeyField">TECLA
+                <input id="automationKeyInput" class="system-input" type="text" maxlength="40" value="j" placeholder="j, space, enter, ctrl+c..." />
+              </label>
+              <div class="automation-fixed-point">
+                <span>POSIÇÃO FIXA</span>
+                <label class="hud-toggle compact"><input id="automationFixedPointToggle" type="checkbox" /><span class="toggle-track"><i></i></span><b>USAR X/Y</b></label>
+              </div>
+              <label>X
+                <input id="automationPointX" class="system-input" type="number" step="1" value="0" />
+              </label>
+              <label>Y
+                <input id="automationPointY" class="system-input" type="number" step="1" value="0" />
+              </label>
+            </div>
+
+            <div class="backup-actions automation-actions">
+              <button id="automationCaptureCursorButton" class="hud-button small">CAPTURAR CURSOR</button>
+              <button id="automationTestButton" class="hud-button small">EXECUTAR 1X</button>
+              <button id="automationStartButton" class="hud-button small primary">INICIAR AUTOCLIQUE</button>
+              <button id="automationStopButton" class="hud-button small danger-outline">PARAR</button>
+            </div>
+
+            <div class="automation-voice-macros">
+              <div class="automation-macro-head">
+                <div><b>COMANDOS PERSONALIZADOS POR VOZ</b><small>Ex.: “haki” → tecla J</small></div>
+                <label class="hud-toggle compact"><input id="automationVoiceMacrosToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>ATIVOS</b></label>
+              </div>
+              <label class="hud-toggle compact"><input id="automationSilentMacrosToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>ATALHO SILENCIOSO · NÃO FALAR DE VOLTA</b></label>
+              <div class="automation-macro-editor">
+                <input id="automationMacroPhrase" class="system-input" type="text" maxlength="80" placeholder="frase: haki" />
+                <select id="automationMacroAction" class="system-input">
+                  <option value="key">Tecla</option>
+                  <option value="mouse_left">Clique esquerdo</option>
+                  <option value="mouse_right">Clique direito</option>
+                </select>
+                <input id="automationMacroValue" class="system-input" type="text" maxlength="40" placeholder="tecla: j" />
+                <button id="automationMacroAddButton" class="hud-button small">+ ADICIONAR</button>
+              </div>
+              <div id="automationMacroList" class="automation-macro-list"></div>
+            </div>
+
+            <p id="automationPlatformNote" class="system-description">No Windows instalado, a JORDAN envia mouse/teclado pelo Native Core mesmo quando outro app está em foco. Android precisa de um Accessibility Service para tocar em outros apps. iPhone não permite injeção global de toques por um app comum.</p>
+          </article>
+
           <article class="hud-panel system-card local-reasoning-card">
             <span>LOCAL REASONING CORE · EXPERIMENTAL</span>
             <strong id="localReasoningStatus">Verificando IA embutida no dispositivo...</strong>
@@ -999,7 +1062,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.13.0";
+    const JORDAN_ASSET_VERSION = "0.14.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

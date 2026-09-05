@@ -1,6 +1,6 @@
-# JORDAN V0.13 — Native App Setup
+# JORDAN V0.14 — Native + Automation Core Setup
 
-A V0.13 adiciona uma camada nativa Tauri 2 sobre o frontend existente. O mesmo HTML/CSS/JS continua sendo a interface da JORDAN, mas agora pode chamar comandos Rust do sistema operacional.
+A V0.14 usa a camada nativa Tauri 2 sobre o frontend existente. O mesmo HTML/CSS/JS continua sendo a interface da JORDAN, mas agora pode chamar comandos Rust do sistema operacional.
 
 ## O que já muda no app nativo
 
@@ -139,8 +139,8 @@ JORDAN-iOS.ipa
 Para criar uma Release automaticamente, envie uma tag, por exemplo:
 
 ```bash
-git tag v0.13.0
-git push origin v0.13.0
+git tag v0.14.0
+git push origin v0.14.0
 ```
 
 O workflow Windows/Android roda automaticamente para tags `v*`. O iOS também roda quando `JORDAN_IOS_SIGNING=enabled` e os Secrets Apple estiverem configurados.
@@ -160,7 +160,7 @@ Se você clicar em `Run workflow` manualmente, os builds ficam na aba Actions co
 
 ### Android
 
-O app nativo já existe e tem mais liberdade do que a página web, mas a V0.13 ainda não instala um Android Foreground Service. Isso é necessário para manter microfone/serviços realmente ativos por períodos longos quando o app sai da tela.
+O app nativo já existe e tem mais liberdade do que a página web, mas a V0.14 ainda não instala um Android Foreground Service. Isso é necessário para manter microfone/serviços realmente ativos por períodos longos quando o app sai da tela.
 
 ### iPhone
 
@@ -168,7 +168,7 @@ O iOS não permite transformar um app comum em um processo arbitrário sempre at
 
 ## 8. Local Reasoning Core
 
-A V0.13 procura `globalThis.LanguageModel`. Se o navegador/runtime fornecer uma API de modelo local compatível, o botão `PREPARAR IA LOCAL` baixa/prepara o modelo e o Manual Core pode usá-lo para perguntas fora das regras fixas.
+A V0.14 procura `globalThis.LanguageModel`. Se o navegador/runtime fornecer uma API de modelo local compatível, o botão `PREPARAR IA LOCAL` baixa/prepara o modelo e o Manual Core pode usá-lo para perguntas fora das regras fixas.
 
 Se não houver `LanguageModel`, nada quebra: agenda, memória, comandos, música, xadrez, conhecimento local e Native Core continuam funcionando.
 
@@ -186,3 +186,26 @@ Depois que Windows e Android estiverem gerando builds estáveis, a próxima evol
 - Android: Foreground Service + notificação persistente + wake-word;
 - iOS: integração dentro dos background modes realmente permitidos pela Apple;
 - voz: empacotar ou substituir o Voice Core Python por um motor nativo/sidecar para não depender de abrir o `.bat` manualmente.
+
+
+## 10. Automation Core no Windows
+
+Na versão instalada do Windows, o Rust chama a API nativa `SendInput`. Isso permite:
+
+- clique esquerdo, direito e do meio;
+- tecla simples (`j`, `space`, `enter`, `f1`...);
+- combinação (`ctrl+c`, `ctrl+shift+s`...);
+- clique em posição fixa X/Y;
+- repetição com intervalo de 25 ms até 1 hora;
+- parada pelo botão `PARAR` ou pela frase `parar autoclick`;
+- atalhos de voz exatos, como `haki` -> `j`.
+
+A configuração fica no `localStorage` do dispositivo, não na nuvem.
+
+### Android
+
+Para tocar em coordenadas de outro aplicativo, Android exige um `AccessibilityService` com capacidade de gestos, habilitado manualmente pelo usuário nas configurações de acessibilidade. A V0.14 já mantém os campos X/Y e a arquitetura da ação, mas retorna `android-accessibility-service-required` enquanto esse bridge não for instalado.
+
+### iPhone
+
+O iOS não oferece a aplicativos comuns uma API para injetar toque/teclado arbitrariamente em outros apps. Portanto, no iPhone o Automation Core deve ficar limitado à própria JORDAN, Shortcuts/Intents e integrações autorizadas pelo sistema.

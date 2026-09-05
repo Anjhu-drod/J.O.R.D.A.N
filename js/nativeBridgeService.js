@@ -23,7 +23,7 @@ export class NativeBridgeService {
   constructor() {
     this.native = false;
     this.platform = detectWebPlatform();
-    this.version = "0.13.0";
+    this.version = "0.14.0";
     this.backgroundCapable = false;
     this.autostart = false;
     this.lastError = null;
@@ -147,6 +147,63 @@ export class NativeBridgeService {
       ? `https://www.youtube.com/results?search_query=${encodeURIComponent(clean)}`
       : "https://www.youtube.com/";
     return this.openUrl(url, { title: clean ? `YouTube · ${clean}` : "YouTube", inApp: true });
+  }
+
+
+  async automationCapabilities() {
+    if (!this.native) {
+      return { platform: this.platform, native: false, global_input: false, mouse: false, keyboard: false, fixed_screen_tap: false, reason: "web-runtime" };
+    }
+    try {
+      return await this.invoke("automation_capabilities");
+    } catch (error) {
+      return { platform: this.platform, native: true, global_input: false, mouse: false, keyboard: false, fixed_screen_tap: false, reason: error.message };
+    }
+  }
+
+  async automationInputOnce(action = {}) {
+    if (!this.native) return { ok: false, reason: "web-runtime" };
+    try {
+      const status = await this.invoke("automation_input_once", { action });
+      return { ok: true, status };
+    } catch (error) {
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  async automationStart({ action = {}, intervalMs = 250 } = {}) {
+    if (!this.native) return { ok: false, reason: "web-runtime" };
+    try {
+      const status = await this.invoke("automation_start", { action, intervalMs: Number(intervalMs) || 250 });
+      return { ok: true, status };
+    } catch (error) {
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  async automationStop() {
+    if (!this.native) return { ok: false, reason: "web-runtime" };
+    try {
+      const status = await this.invoke("automation_stop");
+      return { ok: true, status };
+    } catch (error) {
+      return { ok: false, reason: error.message };
+    }
+  }
+
+  async automationStatus() {
+    if (!this.native) return { running: false, count: 0, interval_ms: 250, last_error: null };
+    return this.invoke("automation_status");
+  }
+
+  async automationCursorPosition() {
+    if (!this.native) return { ok: false, reason: "web-runtime" };
+    try {
+      const point = await this.invoke("automation_cursor_position");
+      return { ok: true, ...point };
+    } catch (error) {
+      return { ok: false, reason: error.message };
+    }
   }
 
   downloadTargets() {
