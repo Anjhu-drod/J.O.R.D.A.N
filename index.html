@@ -10,7 +10,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./assets/icon-192.png" />
   <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-  <link rel="stylesheet" href="./css/styles.css?v=0.11.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=0.12.0" />
 </head>
 <body data-theme="nova" class="auth-locked">
   <div class="fx-grid"></div>
@@ -437,7 +437,7 @@
           <div>
             <span class="hud-label">JORDAN ARENA / LOCAL GAME CORE</span>
             <h2>Xadrez contra JORDAN</h2>
-            <p>Você joga contra o motor local da JORDAN. A partida funciona mesmo sem internet e o Agent Core também consegue consultar o tabuleiro.</p>
+            <p>Você joga contra o motor local da JORDAN. A partida funciona sem API, e o Manual Core consegue entender comandos como “jogue e2 para e4”.</p>
           </div>
           <div class="chess-header-chip"><i></i><span>JORDAN CHESS ENGINE</span></div>
         </div>
@@ -564,18 +564,18 @@
               <button id="checkVoiceCoreButton" class="hud-button small">TESTAR CONEXÃO</button>
               <button id="testVoiceButton" class="hud-button small primary">OUVIR JORDAN</button>
             </div>
-            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Em AUTO, o JORDAN Core usa a voz neural cloud quando a API está disponível e cai para o núcleo local se houver falha; a contingência do dispositivo é a última rede de segurança para ela não ficar muda. Para manter a mesma Spark em todos os aparelhos, use o mesmo endpoint HTTPS do JORDAN Core.</p>
+            <p class="system-description">JORDAN Spark V2 é uma identidade vocal original: jovem-adulta, luminosa, rápida e muito expressiva sem soar infantil. Na V0.12 ela usa somente o Voice Core local; nenhuma chave de IA é necessária. A contingência do dispositivo continua como última rede de segurança para a JORDAN não ficar muda. Para usar a mesma Spark em outro aparelho, exponha o Voice Core por um endpoint HTTPS acessível a ele.</p>
           </article>
-          <article class="hud-panel system-card agent-core-card">
-            <span>JORDAN AUTONOMOUS AGENT CORE</span>
-            <strong>Raciocínio geral + uso de ferramentas</strong>
-            <div id="agentCoreStatus" class="voice-core-status"><i></i><b>VERIFICANDO AGENT CORE...</b></div>
-            <label class="hud-toggle compact"><input id="autonomousAgentToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR CÉREBRO AUTÔNOMO</b></label>
+          <article class="hud-panel system-card manual-core-card">
+            <span>JORDAN MANUAL CORE</span>
+            <strong>Cérebro local · contexto + interpretação + ferramentas</strong>
+            <div id="manualCoreStatus" class="voice-core-status online"><i></i><b>JORDAN MANUAL CORE · LOCAL · READY</b></div>
+            <label class="hud-toggle compact"><input id="manualCoreToggle" type="checkbox" checked /><span class="toggle-track"><i></i></span><b>USAR MANUAL CORE</b></label>
             <div class="backup-actions">
-              <button id="checkAgentCoreButton" class="hud-button small">TESTAR AGENT CORE</button>
-              <button id="resetAgentConversationButton" class="hud-button small">REINICIAR CONTEXTO</button>
+              <button id="checkManualCoreButton" class="hud-button small">TESTAR MANUAL CORE</button>
+              <button id="resetManualConversationButton" class="hud-button small">REINICIAR CONTEXTO</button>
             </div>
-            <p class="system-description">Quando online, a JORDAN deixa de depender de respostas prontas para conversar: ela interpreta o objetivo, raciocina sobre o contexto e decide quando usar calendário, memória, mensagens, localização, apps, pesquisa atual e capacidades antigas. A chave da API fica somente no servidor JORDAN Core, nunca no navegador.</p>
+            <p class="system-description">Este núcleo roda dentro do próprio navegador e não usa OpenAI API. Ele guarda o contexto recente da conversa, classifica a intenção da frase e escolhe ferramentas locais para cálculo, agenda, memória, localização, apps, pesquisa, mensagens e xadrez. Os módulos especializados antigos continuam por baixo dele como habilidades.</p>
           </article>
           <article class="hud-panel system-card knowledge-card">
             <span>OFFLINE KNOWLEDGE CORE</span>
@@ -969,7 +969,7 @@
   </dialog>
 
   <script type="module">
-    const JORDAN_ASSET_VERSION = "0.11.0";
+    const JORDAN_ASSET_VERSION = "0.12.0";
     const RESET_KEY = "jordan.asset-reset-version";
 
     async function bootVersionedJordan() {

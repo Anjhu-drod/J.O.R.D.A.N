@@ -1,11 +1,11 @@
-const CACHE_NAME = "jordan-v0.11.0";
+const CACHE_NAME = "jordan-v0.12.0";
 const FIREBASE_CACHE = "jordan-firebase-v12.18.0";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/styles.css?v=0.11.0",
-  "./js/app.js?v=0.11.0",
+  "./css/styles.css?v=0.12.0",
+  "./js/app.js?v=0.12.0",
   "./js/authService.js",
   "./js/lineageConfig.js",
   "./js/lineageService.js",
@@ -49,7 +49,7 @@ const APP_SHELL = [
   "./js/presenceModeService.js",
   "./js/lineageVoiceConfigService.js",
   "./js/messageService.js",
-  "./js/autonomousAgentService.js",
+  "./js/manualCoreService.js",
   "./js/jordanChessService.js",
   "./js/mathService.js",
   "./manifest.webmanifest",

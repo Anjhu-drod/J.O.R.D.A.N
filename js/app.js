@@ -40,7 +40,7 @@ import { SemanticBrainService } from "./semanticBrainService.js";
 import { PresenceModeService } from "./presenceModeService.js";
 import { lineageVoiceConfigService, DEFAULT_SHARED_VOICE_TUNING } from "./lineageVoiceConfigService.js";
 import { MessageService } from "./messageService.js";
-import { AutonomousAgentService } from "./autonomousAgentService.js";
+import { ManualCoreService } from "./manualCoreService.js";
 import { JordanChessService, coordToSquare } from "./jordanChessService.js";
 import { safeCalculate } from "./mathService.js";
 
@@ -58,7 +58,7 @@ const languageLearning = new LanguageLearningService(memory);
 const semanticBrain = new SemanticBrainService({ memory, lineage: lineageService, offlineKnowledge, languageLearning });
 const presence = new PresenceModeService({ getSetting, setSetting });
 const messages = new MessageService(lineageService);
-const autonomousAgent = new AutonomousAgentService();
+const manualCore = new ManualCoreService();
 const chess = new JordanChessService();
 const assistant = new JordanAssistant(calendar, memory, stories, {
   internet,
@@ -101,8 +101,7 @@ let sharedVoiceTuning = { ...DEFAULT_SHARED_VOICE_TUNING };
 let voiceConfigUnsubscribe = null;
 let presenceTimer = null;
 let messagePollTimer = null;
-let autonomousAgentEnabled = true;
-let lastAgentFallbackNoticeAt = 0;
+let manualCoreEnabled = true;
 let chessSelectedSquare = null;
 let chessLegalTargets = [];
 let chessFlipped = false;
@@ -341,7 +340,7 @@ async function initialize() {
   allowThirdPartyConversation = await startupCloudValue("allowThirdPartyConversation", () => getSetting("allowThirdPartyConversation", true), true);
   neuralVoiceEnabled = await startupCloudValue("neuralVoiceEnabled", () => getSetting("neuralVoiceEnabled", true), true);
   deviceVoiceFallbackEnabled = await startupCloudValue("deviceVoiceFallbackEnabled", () => getSetting("deviceVoiceFallbackEnabled", true), true);
-  autonomousAgentEnabled = await startupCloudValue("autonomousAgentEnabled", () => getSetting("autonomousAgentEnabled", true), true);
+  manualCoreEnabled = await startupCloudValue("manualCoreEnabled", () => getSetting("manualCoreEnabled", true), true);
   musicDefaultSource = await startupCloudValue("music.defaultSource", () => getSetting("music.defaultSource", "youtube"), "youtube");
   if (!['youtube','jordan'].includes(musicDefaultSource)) musicDefaultSource = "youtube";
   // O endpoint é específico do aparelho: PC pode usar localhost enquanto o celular
@@ -362,7 +361,7 @@ async function initialize() {
   });
 
   voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
-  autonomousAgent.configure({ enabled: autonomousAgentEnabled, endpoint: neuralVoiceEndpoint });
+  manualCore.configure({ enabled: manualCoreEnabled });
   voice.setDeviceVoiceFallback(deviceVoiceFallbackEnabled);
   voice.setLanguageMode(languageMode);
   assistant.setResponseLanguage?.(languageMode);
@@ -383,7 +382,7 @@ async function initialize() {
   if (ui.elements.thirdPartyConversationToggle) ui.elements.thirdPartyConversationToggle.checked = allowThirdPartyConversation;
   if (ui.elements.neuralVoiceToggle) ui.elements.neuralVoiceToggle.checked = neuralVoiceEnabled;
   if (ui.elements.deviceVoiceFallbackToggle) ui.elements.deviceVoiceFallbackToggle.checked = deviceVoiceFallbackEnabled;
-  if (ui.elements.autonomousAgentToggle) ui.elements.autonomousAgentToggle.checked = autonomousAgentEnabled;
+  if (ui.elements.manualCoreToggle) ui.elements.manualCoreToggle.checked = manualCoreEnabled;
   if (ui.elements.musicDefaultSource) ui.elements.musicDefaultSource.value = musicDefaultSource;
   if (ui.elements.neuralVoiceEndpoint) ui.elements.neuralVoiceEndpoint.value = neuralVoiceEndpoint;
   voiceIdentityService.setPolicy({ enabled: voiceIdentityEnabled, allowThirdPartyConversation });
@@ -429,7 +428,7 @@ async function initialize() {
   }
 
   updateVoiceStatus();
-  updateAgentStatus();
+  updateManualCoreStatus();
   ui.setPersonality(assistant.getPersonality());
 
   if (voice.browserSynthesisSupported && "onvoiceschanged" in window.speechSynthesis) {
@@ -580,15 +579,10 @@ async function updateVoiceStatus({ force = false } = {}) {
   }
 }
 
-async function updateAgentStatus({ force = false } = {}) {
-  if (!ui.elements.agentCoreStatus) return;
-  if (!autonomousAgentEnabled) {
-    ui.setAgentCoreStatus?.({ ok: false, enabled: false, reason: "disabled" });
-    return;
-  }
-
-  const health = await autonomousAgent.health({ force }).catch((error) => ({ ok: false, error }));
-  ui.setAgentCoreStatus?.({ ...health, enabled: true });
+function updateManualCoreStatus() {
+  if (!ui.elements.manualCoreStatus) return;
+  const health = manualCore.health();
+  ui.setManualCoreStatus?.({ ...health, enabled: manualCoreEnabled });
 }
 
 function renderSystemCommandLearning() {
@@ -859,32 +853,33 @@ function bindEvents() {
       : "Contingência desligada. Se o Voice Core cair, a JORDAN responde em texto em vez de trocar de voz.", "JORDAN VOICE");
   });
 
-  ui.elements.autonomousAgentToggle?.addEventListener("change", async (event) => {
+  ui.elements.manualCoreToggle?.addEventListener("change", async (event) => {
     registerInteraction();
-    autonomousAgentEnabled = Boolean(event.target.checked);
-    await setSetting("autonomousAgentEnabled", autonomousAgentEnabled);
-    autonomousAgent.configure({ enabled: autonomousAgentEnabled, endpoint: neuralVoiceEndpoint });
-    autonomousAgent.resetConversation();
-    await updateAgentStatus({ force: true });
-    ui.toast(autonomousAgentEnabled
-      ? "Agent Core ativado. A JORDAN vai raciocinar e escolher ferramentas antes de responder."
-      : "Agent Core desativado. A JORDAN voltou ao cérebro local legado.", "JORDAN AGENT");
+    manualCoreEnabled = Boolean(event.target.checked);
+    await setSetting("manualCoreEnabled", manualCoreEnabled);
+    manualCore.configure({ enabled: manualCoreEnabled });
+    manualCore.resetConversation();
+    updateManualCoreStatus();
+    ui.toast(manualCoreEnabled
+      ? "Manual Core ativado. O cérebro local voltou a interpretar contexto e acionar ferramentas."
+      : "Manual Core desativado. A JORDAN continuará apenas com os módulos especializados antigos.", "JORDAN MANUAL CORE");
   });
 
-  ui.elements.resetAgentConversationButton?.addEventListener("click", () => {
+  ui.elements.resetManualConversationButton?.addEventListener("click", () => {
     registerInteraction();
-    autonomousAgent.resetConversation();
-    ui.toast("Contexto temporário do Agent Core reiniciado. Memórias e calendário foram preservados.", "JORDAN AGENT");
+    manualCore.resetConversation();
+    updateManualCoreStatus();
+    ui.toast("Contexto de conversa do Manual Core reiniciado. Memórias, calendário e xadrez foram preservados.", "JORDAN MANUAL CORE");
   });
 
-  ui.elements.checkAgentCoreButton?.addEventListener("click", async () => {
+  ui.elements.checkManualCoreButton?.addEventListener("click", async () => {
     registerInteraction();
-    ui.setAgentCoreStatus?.({ ok: false, enabled: autonomousAgentEnabled, reason: "checking" });
-    const health = await autonomousAgent.diagnose();
-    ui.setAgentCoreStatus?.({ ...health, enabled: autonomousAgentEnabled });
+    ui.setManualCoreStatus?.({ ok: false, enabled: manualCoreEnabled, reason: "checking" });
+    const health = await manualCore.diagnose();
+    ui.setManualCoreStatus?.({ ...health, enabled: manualCoreEnabled });
     ui.toast(health.ok
-      ? `Agent Core respondeu de verdade · ${health.model || "modelo configurado"}.`
-      : (health.reachable ? `Core local respondeu, mas a IA falhou: ${health.reason || "verifique a chave/modelo"}` : "Agent Core não respondeu."), "JORDAN AGENT", 8000);
+      ? `Manual Core local aprovado · ${health.passed}/${health.total} testes internos. Não usa API.`
+      : `O Manual Core encontrou uma falha interna · ${health.passed}/${health.total} testes passaram.`, "JORDAN MANUAL CORE", 8000);
   });
 
   ui.elements.musicDefaultSource?.addEventListener("change", async (event) => {
@@ -899,10 +894,8 @@ function bindEvents() {
     neuralVoiceEndpoint = value.replace(/\/+$/, "");
     localStorage.setItem("jordan.voice-endpoint-v1", neuralVoiceEndpoint);
     voice.configureNeuralVoice({ enabled: neuralVoiceEnabled, endpoint: neuralVoiceEndpoint });
-    autonomousAgent.configure({ enabled: autonomousAgentEnabled, endpoint: neuralVoiceEndpoint });
-    autonomousAgent.resetConversation();
-    await Promise.all([updateVoiceStatus({ force: true }), updateAgentStatus({ force: true })]);
-    ui.toast("Endpoint do JORDAN Core salvo neste dispositivo.", "JORDAN CORE");
+    await updateVoiceStatus({ force: true });
+    ui.toast("Endpoint do Voice Core salvo neste dispositivo. O Manual Core não depende desse endereço.", "JORDAN VOICE");
   });
 
   ui.elements.checkVoiceCoreButton?.addEventListener("click", async () => {
@@ -1431,7 +1424,7 @@ async function startChessGame({ difficulty = "normal", playerColor = "w", open =
   return { state: chess.publicState(), jordanMove };
 }
 
-function chessAgentState() {
+function chessCoreState() {
   const state = chess.publicState();
   return {
     status: state.status,
@@ -1447,7 +1440,7 @@ function chessAgentState() {
   };
 }
 
-function agentEventView(event) {
+function coreEventView(event) {
   if (!event) return null;
   return {
     id: event.id,
@@ -1460,7 +1453,7 @@ function agentEventView(event) {
   };
 }
 
-async function buildAgentContext() {
+async function buildManualCoreContext() {
   const [facts, upcoming, unreadCount] = await Promise.all([
     memory.summarizeFacts(10).catch(() => []),
     calendar.upcoming(8).catch(() => []),
@@ -1483,14 +1476,14 @@ async function buildAgentContext() {
     } : null,
     personality: assistant.getPersonality()?.id || "extroverted",
     memories: facts.map((item) => ({ label: item.label, value: item.value })),
-    upcomingEvents: upcoming.map(agentEventView),
+    upcomingEvents: upcoming.map(coreEventView),
     unreadMessages: unreadCount,
     availableApps: appLauncher.listTargets().map((item) => item.id),
-    chess: chessAgentState()
+    chess: chessCoreState()
   };
 }
 
-async function applyLegacyAgentAction(result) {
+async function applyLegacyCoreAction(result) {
   if (!result) return;
   if (result.refreshAgenda) {
     await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
@@ -1525,7 +1518,7 @@ async function applyLegacyAgentAction(result) {
   }
 }
 
-function createAgentToolHandlers() {
+function createManualCoreToolHandlers() {
   return {
     async get_agenda({ range = "upcoming", limit = 10 } = {}) {
       let events = [];
@@ -1540,7 +1533,7 @@ function createAgentToolHandlers() {
       } else {
         events = await calendar.upcoming(Math.max(1, Math.min(30, Number(limit) || 10)));
       }
-      return { ok: true, events: events.slice(0, Math.max(1, Math.min(30, Number(limit) || 10))).map(agentEventView) };
+      return { ok: true, events: events.slice(0, Math.max(1, Math.min(30, Number(limit) || 10))).map(coreEventView) };
     },
 
     async create_calendar_event({ title, start_at, end_at = null, duration_minutes = null, description = "", all_day = false } = {}) {
@@ -1559,22 +1552,22 @@ function createAgentToolHandlers() {
         startAt,
         endAt,
         description: String(description || ""),
-        source: "jordan-agent",
+        source: "jordan-manual-core",
         allDay: Boolean(all_day)
       });
       await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
-      return { ok: true, event: agentEventView(event) };
+      return { ok: true, event: coreEventView(event) };
     },
 
     async delete_calendar_event({ query = "" } = {}) {
       const matches = await calendar.search(String(query || ""), { futureOnly: false });
       if (!matches.length) return { ok: false, error: "Nenhum compromisso corresponde à busca." };
       if (matches.length > 1) {
-        return { ok: false, needs_disambiguation: true, matches: matches.slice(0, 6).map(agentEventView) };
+        return { ok: false, needs_disambiguation: true, matches: matches.slice(0, 6).map(coreEventView) };
       }
       await calendar.remove(matches[0].id);
       await Promise.all([ui.renderToday(), ui.renderNext(), ui.renderAgenda(), ui.renderMonthGrid(), ui.renderSelectedDay()]);
-      return { ok: true, deleted: agentEventView(matches[0]) };
+      return { ok: true, deleted: coreEventView(matches[0]) };
     },
 
     async search_memory({ query = "", limit = 10 } = {}) {
@@ -1594,11 +1587,11 @@ function createAgentToolHandlers() {
     async remember_fact({ label = "Informação", value = "" } = {}) {
       if (!String(value).trim()) throw new Error("A memória ficou vazia.");
       const item = await memory.remember({
-        key: `agent.fact.${Date.now()}`,
+        key: `manual.fact.${Date.now()}`,
         label: String(label || "Informação").trim(),
         value: String(value).trim(),
         type: "fact",
-        source: "agent-conversation"
+        source: "manual-core-conversation"
       });
       await ui.renderMemory();
       return { ok: true, memory: { id: item.id, label: item.label, value: item.value } };
@@ -1692,7 +1685,7 @@ function createAgentToolHandlers() {
     },
 
     async get_chess_state() {
-      return { ok: true, ...chessAgentState() };
+      return { ok: true, ...chessCoreState() };
     },
 
     async start_chess_game({ difficulty = "normal", player_color = "white" } = {}) {
@@ -1702,16 +1695,16 @@ function createAgentToolHandlers() {
         ok: true,
         message: `Nova partida iniciada. Usuário: ${chessColorLabel(playerColor)}.`,
         jordan_opening_move: started.jordanMove?.move || null,
-        state: chessAgentState()
+        state: chessCoreState()
       };
     },
 
     async play_chess_move({ from = "", to = "", promotion = "Q" } = {}) {
       const before = chess.publicState();
-      if (before.status !== "playing") return { ok: false, error: "A partida já terminou.", state: chessAgentState() };
-      if (before.turn !== before.playerColor) return { ok: false, error: "Agora é a vez da JORDAN.", state: chessAgentState() };
+      if (before.status !== "playing") return { ok: false, error: "A partida já terminou.", state: chessCoreState() };
+      if (before.turn !== before.playerColor) return { ok: false, error: "Agora é a vez da JORDAN.", state: chessCoreState() };
       const userMove = chess.move(String(from).toLowerCase(), String(to).toLowerCase(), promotion);
-      if (!userMove.ok) return { ...userMove, state: chessAgentState() };
+      if (!userMove.ok) return { ...userMove, state: chessCoreState() };
       persistChess();
       renderChess();
       let jordanMove = null;
@@ -1721,7 +1714,7 @@ function createAgentToolHandlers() {
         ok: true,
         user_move: userMove.move,
         jordan_move: jordanMove?.move || null,
-        state: chessAgentState()
+        state: chessCoreState()
       };
     },
 
@@ -1733,12 +1726,12 @@ function createAgentToolHandlers() {
       chessSelectedSquare = null;
       chessLegalTargets = [];
       if (ok) { persistChess(); renderChess(); ui.openView("games"); }
-      return { ok, state: chessAgentState(), error: ok ? null : "Não há lances para desfazer." };
+      return { ok, state: chessCoreState(), error: ok ? null : "Não há lances para desfazer." };
     },
 
     async legacy_jordan_capability({ instruction = "" } = {}) {
-      const result = await assistant.execute(String(instruction || ""), { source: "agent-tool", confidence: 1 });
-      await applyLegacyAgentAction(result);
+      const result = await assistant.execute(String(instruction || ""), { source: "manual-core-tool", confidence: 1 });
+      await applyLegacyCoreAction(result);
       return {
         ok: result?.understood !== false,
         text: result?.text || "",
@@ -1874,28 +1867,26 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
     }
 
     let result = null;
-    let agentFailure = null;
 
-    if (autonomousAgentEnabled) {
+    if (manualCoreEnabled) {
       try {
-        ui.setStatus("JORDAN AGENT CORE · raciocinando...");
-        const context = await buildAgentContext();
-        result = await autonomousAgent.execute(text, {
+        ui.setStatus("JORDAN MANUAL CORE · interpretando...");
+        const context = await buildManualCoreContext();
+        result = await manualCore.execute(text, {
           context,
-          toolHandlers: createAgentToolHandlers(),
+          toolHandlers: createManualCoreToolHandlers(),
+          fallback: () => assistant.execute(text, {
+            source: fromVoice ? "voice" : "typed",
+            confidence: fromVoice ? Number(recognitionMeta?.confidence || 0) : 1
+          }),
           onToolCall: (call) => {
             const toolLabel = String(call?.name || "AÇÃO").replace(/_/g, " ").toUpperCase();
-            ui.setStatus(`JORDAN AGENT CORE · ${toolLabel}`);
+            ui.setStatus(`JORDAN MANUAL CORE · ${toolLabel}`);
           }
         });
-      } catch (agentError) {
-        agentFailure = agentError;
-        console.warn("JORDAN Agent Core fallback:", agentError);
-        const now = Date.now();
-        if (now - lastAgentFallbackNoticeAt > 60_000) {
-          lastAgentFallbackNoticeAt = now;
-          ui.setStatus("Agent Core indisponível · usando cérebro local");
-        }
+      } catch (coreError) {
+        console.warn("JORDAN Manual Core fallback:", coreError);
+        ui.setStatus("Manual Core encontrou um erro · usando módulo especializado");
       }
     }
 
@@ -1904,30 +1895,6 @@ async function handleCommand(text, { fromVoice = false, speaker = null, recognit
         source: fromVoice ? "voice" : "typed",
         confidence: fromVoice ? Number(recognitionMeta?.confidence || 0) : 1
       });
-
-      // O antigo fallback de conversa devolvia “Compreendi...” para praticamente
-      // qualquer pergunta que não tivesse um handler. Isso escondia o defeito
-      // real (Agent Core offline/sem chave) e fazia a JORDAN parecer burra.
-      // Mantemos os módulos locais úteis, mas nunca mascaramos uma pergunta
-      // aberta com aquela resposta genérica.
-      if (agentFailure && result?.understood === false) {
-        const health = autonomousAgent.lastHealth || {};
-        const rawReason = String(health.reason || agentFailure?.message || "Agent Core indisponível").trim();
-        const reason = rawReason === "unreachable"
-          ? "não consegui alcançar o JORDAN Core"
-          : rawReason === "timeout"
-            ? "o JORDAN Core demorou demais para responder"
-            : rawReason;
-        const textFallback = `Meu cérebro autônomo não entrou nesta resposta porque ${reason}. Eu não vou fingir que entendi com uma frase pronta. Abra SYS → TESTAR AGENT CORE para ver o diagnóstico. Minhas funções locais, voz, calendário e xadrez continuam disponíveis.`;
-        result = {
-          ...result,
-          text: textFallback,
-          speak: textFallback,
-          mood: "serious",
-          source: "agent-diagnostic",
-          understood: true
-        };
-      }
     }
 
     ui.addMessage("JORDAN", result.text || "Pronto.");

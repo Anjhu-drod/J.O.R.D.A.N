@@ -1,83 +1,46 @@
-# JORDAN V0.11 — NEBULA / AUTONOMOUS CORE / SPARK V2 / CHESS
+# JORDAN V0.12 — MANUAL CORE / NEBULA / SPARK V2 / CHESS
 
-Projeto acumulado até a V0.9.2. Para atualização incremental, aplique o patch V0.9.2 sobre a V0.9.1.
+Atualização incremental em cima da V0.11.
 
-## Destaques
+## V0.12 — Manual Core
 
-- Agent Core corrigido para não mascarar falhas com respostas genéricas; diagnóstico agora testa uma chamada real do modelo.
-- Novas ferramentas autônomas para localização atual, cálculo e JORDAN Arena.
-- JORDAN Spark V2: nova direção vocal original, cloud neural com fallback local e contingência do dispositivo.
-- Novo tema padrão `Nebula Core · V2`.
-- Nova aba `GAME` com xadrez local completo contra a JORDAN, três dificuldades, undo e tabuleiro persistente.
-- Cache PWA: `jordan-v0.11.0`.
+A dependência do Autonomous Agent Core foi removida do runtime. A JORDAN agora possui um cérebro manual local que roda diretamente no navegador.
 
-- JORDAN Spark Neural V1 integrada como voz principal.
-- JORDAN Spark Neural V1 é a identidade de voz principal; a voz do dispositivo só é usada se a contingência manual estiver ativada.
-- Voice Server Python/FastAPI incluído em `voice_server/`.
-- Endpoint do Voice Core configurável por dispositivo em SYS.
-- Mesma Firebase JORDAN ID em vários dispositivos simultaneamente.
-- Vínculo opcional de Google + E-mail/Senha ao mesmo Firebase UID.
-- Novo mapa `userIdentityClaims/{uid}` para recuperar a identidade rapidamente em aparelho novo.
-- `browserLocalPersistence`: login permanece até usar SAIR.
-- Novo boot cinematográfico ao entrar.
-- Animação específica para conversa, calendário, música, pesquisa, navegação, ciência e sistema.
-- Ripple em botões/toques, transições de views, varreduras, hexfield, equalizer e atividade extra do CORE.
-- Layout adicional para tablet/celular pequeno.
+Principais mudanças:
 
-## Firebase
-
-**Publique o `firestore.rules` desta V0.9.2.** Sem isso, mensagens, configurações globais e o mapa multidispositivo `userIdentityClaims` podem ser negados pelo Firestore.
+- `ManualCoreService`: interpretação local por intenção + contexto recente de conversa.
+- Não usa `OPENAI_API_KEY`, modelo remoto ou endpoint `/agent/*`.
+- Status do cérebro não fica offline por causa do Voice Server.
+- Ferramentas locais continuam disponíveis: agenda, memória, mensagens, localização, apps, cálculo, pesquisa e xadrez.
+- Perguntas como “o que é você?”, “você consegue calcular?”, “onde eu estou?”, “me conta uma piada” e “ache meu nome na internet” recebem tratamento local/contextual.
+- O Manual Core usa os módulos especializados antigos como habilidades, em vez de descartá-los.
+- Contexto temporário das últimas conversas é guardado em `sessionStorage` e pode ser reiniciado no SYS sem apagar memória permanente.
+- Spark V2 foi colocada em modo local; o Voice Server não usa mais OpenAI API.
+- Cache PWA: `jordan-v0.12.0`.
 
 ## Voice Core
 
 Leia `VOICE_CORE_SETUP.md`.
 
-No PC:
+No PC, para usar a Spark V2 local:
 
 1. `voice_server/SETUP_WINDOWS.bat`
 2. `voice_server/RUN_VOICE_SERVER.bat`
 3. SYS > JORDAN VOICE CORE > TESTAR CONEXÃO
 
-O padrão do PC é `http://127.0.0.1:8787`.
+O Manual Core funciona mesmo que o Voice Server esteja fechado.
 
-No celular use um endpoint HTTPS acessível pelo celular. A URL não é sincronizada entre aparelhos de propósito.
+## Arquivos antigos removidos na V0.12
 
-## Atualização
+Esses arquivos não são mais usados e devem ser apagados do GitHub ao aplicar o patch:
 
-O Service Worker desta versão usa cache `jordan-v0.9.2`. Depois de atualizar no GitHub Pages, faça uma recarga forte no PC e reabra completamente a PWA no celular para descartar caches antigos.
+- `js/autonomousAgentService.js`
+- `voice_server/server/agent_engine.py`
+- `voice_server/CONFIGURE_AGENT_CORE.bat`
+- `voice_server/.env.example`
 
-## V0.9.1 — Semantic + Offline + Presence Core
+O seu arquivo privado `voice_server/.env`, se existir, pode ser mantido ou apagado localmente; a V0.12 não o usa.
 
-- Corrige fallback de voz no celular quando o Voice Core está apontando para localhost/127.0.0.1.
-- Voice Lock com terceiros permitidos mantém conversa e conhecimento geral em rota read-only.
-- Offline Knowledge Core: 16 disciplinas e mais de 150 conceitos locais, além de aritmética básica, porcentagem e raiz quadrada.
-- Semantic Brain resolve relações como “meu nome” pelo contexto do usuário em vez de depender só de respostas prontas.
-- Language Learning aprende palavras e regras ensinadas pelo chat; em voz, só pergunta palavra desconhecida quando a confiança do reconhecimento é alta.
-- Presence Core: Boa noite = Sleep Mode; Bom dia = acordar; Socorro permanece disponível; Jordan silêncio = Silence Mode.
-- Personalidade extrovertida deixa de repetir prompts aleatórios; só faz um check curto após silêncio e atividade de áudio recente.
-- Creator Voice Lab: Jhuan pode ajustar speed/pitch/brightness/energy/expressiveness globalmente em `lineageConfig/voice`.
-- Voice Server aceita tuning compartilhado.
+## Firebase
 
-Versão do cache PWA: `jordan-v0.9.1`.
-
-## V0.9.2 — Reasoning Repair / Messages / Voice Reliability
-
-Esta versão corrige o roteamento que fazia perguntas contextuais caírem na Wikipédia.
-
-Principais mudanças:
-
-- Semantic Brain passa a resolver primeiro usuário, JORDAN, memória, contexto e interface antes de consultar internet.
-- Perguntas como “quem sou eu?”, “qual o seu nome?”, “onde eu moro?”, “qual idioma estou falando?” e “como acesso o calendário?” não viram pesquisa externa.
-- Perguntas atuais dependentes de contexto, como “quem é o presidente do país?”, primeiro resolvem o país salvo do usuário.
-- Offline Knowledge continua disponível e agora recebe prioridade antes da internet para perguntas compatíveis.
-- Voice Identity V2 fica conservadora: uma única diferença de microfone não transforma o dono logado em terceiro.
-- JORDAN Spark Neural permanece a voz oficial. A voz do dispositivo não é usada silenciosamente; contingência do dispositivo é opt-in.
-- Nova aba MSG com mensagens individuais e broadcast para toda a linhagem.
-- “Bom dia” gera briefing com agenda do dia e mensagens novas.
-- Pedidos de música usam YouTube por padrão; “na biblioteca” força JORDAN Music. A fonte padrão pode ser alterada em SYS.
-- Recorrências de calendário suportam diariamente, semanalmente, mensalmente e intervalos como “a cada 20 dias”. Se faltar a data inicial, JORDAN pergunta apenas a data de início e preserva o restante do pedido.
-- Cache PWA: `jordan-v0.9.2`.
-
-### Firestore
-
-Publique novamente o `firestore.rules` desta versão. A coleção `lineageMessages` é nova e as mensagens são imutáveis para membros normais; cada usuário autenticado vê as próprias mensagens, broadcasts e mensagens enviadas. O creator mantém administração.
+As regras e a arquitetura Firebase da V0.11/V0.9.2 não foram refeitas. Mensagens, memória sincronizada, identidade e calendário continuam usando a base existente.

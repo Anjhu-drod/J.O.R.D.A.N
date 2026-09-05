@@ -82,10 +82,10 @@ export class JordanUI {
       saveVoiceEndpointButton: document.querySelector("#saveVoiceEndpointButton"),
       checkVoiceCoreButton: document.querySelector("#checkVoiceCoreButton"),
       testVoiceButton: document.querySelector("#testVoiceButton"),
-      agentCoreStatus: document.querySelector("#agentCoreStatus"),
-      autonomousAgentToggle: document.querySelector("#autonomousAgentToggle"),
-      checkAgentCoreButton: document.querySelector("#checkAgentCoreButton"),
-      resetAgentConversationButton: document.querySelector("#resetAgentConversationButton"),
+      manualCoreStatus: document.querySelector("#manualCoreStatus"),
+      manualCoreToggle: document.querySelector("#manualCoreToggle"),
+      checkManualCoreButton: document.querySelector("#checkManualCoreButton"),
+      resetManualConversationButton: document.querySelector("#resetManualConversationButton"),
       offlineKnowledgeStatus: document.querySelector("#offlineKnowledgeStatus"),
       presenceStatus: document.querySelector("#presenceStatus"),
       voiceTuneSpeed: document.querySelector("#voiceTuneSpeed"),
@@ -349,22 +349,20 @@ export class JordanUI {
     }
   }
 
-  setAgentCoreStatus(status = {}) {
-    const target = this.elements.agentCoreStatus;
+  setManualCoreStatus(status = {}) {
+    const target = this.elements.manualCoreStatus;
     if (!target) return;
     const enabled = status.enabled !== false;
-    const available = Boolean(status.available);
-    const reachable = status.reachable ?? Boolean(status.ok || status.httpOk);
-    target.classList.toggle("online", enabled && reachable && available);
-    target.classList.toggle("offline", !enabled || !reachable || !available);
+    const checking = status.reason === "checking";
+    const ok = Boolean(status.ok) && status.available !== false;
+    target.classList.toggle("online", enabled && ok && !checking);
+    target.classList.toggle("offline", !enabled || (!ok && !checking));
     const label = target.querySelector("b");
     if (!label) return;
-    if (!enabled) label.textContent = "AGENT CORE DESATIVADO";
-    else if (status.reason === "checking") label.textContent = "VERIFICANDO AGENT CORE...";
-    else if (reachable && available) label.textContent = `ONLINE · ${status.model || "MODELO CONFIGURADO"}`;
-    else if (reachable && status.reason) label.textContent = `CORE ONLINE · ${String(status.reason).slice(0, 52).toUpperCase()}`;
-    else if (reachable) label.textContent = "CORE ONLINE · AGENTE NÃO CONFIGURADO";
-    else label.textContent = "AGENT CORE OFFLINE · FUNÇÕES LOCAIS ATIVAS";
+    if (!enabled) label.textContent = "MANUAL CORE DESATIVADO";
+    else if (checking) label.textContent = "TESTANDO MANUAL CORE LOCAL...";
+    else if (ok) label.textContent = `${status.engine || "JORDAN MANUAL CORE"} · LOCAL · READY`;
+    else label.textContent = "MANUAL CORE · ERRO INTERNO";
   }
 
   playCinematic(kind = "core", title = "JORDAN", subtitle = "Executando", duration = 760) {

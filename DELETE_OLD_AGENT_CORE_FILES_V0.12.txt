@@ -1,0 +1,9 @@
+APAGAR ESTES ARQUIVOS ANTIGOS DO GITHUB/PROJETO:
+
+js/autonomousAgentService.js
+voice_server/server/agent_engine.py
+voice_server/CONFIGURE_AGENT_CORE.bat
+voice_server/.env.example
+
+Eles não são usados pela V0.12.
+Não é necessário apagar voice_server/.env se você não quiser; a V0.12 simplesmente ignora esse arquivo.

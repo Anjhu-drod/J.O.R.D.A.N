@@ -4,20 +4,8 @@ from pathlib import Path
 from threading import Lock
 import io
 import json
-import os
 import re
 from typing import Any
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    def load_dotenv(*args, **kwargs):
-        return False
-
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
 
 try:
     import numpy as np
@@ -39,7 +27,6 @@ except Exception:
     LOCAL_DEPS_OK = False
 
 ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / ".env")
 RECIPE = json.loads((ROOT / "config" / "voice_recipe.json").read_text(encoding="utf-8"))
 PRON = json.loads((ROOT / "config" / "pronunciation.json").read_text(encoding="utf-8"))
 SR = int(RECIPE["sample_rate"])
@@ -48,19 +35,15 @@ SR = int(RECIPE["sample_rate"])
 class JordanTTSEngine:
     """JORDAN Spark V2.
 
-    A identidade vocal é original. Em modo ``auto`` o Core usa o TTS neural da
-    OpenAI quando a mesma OPENAI_API_KEY do Agent Core estiver configurada e
-    mantém o Kokoro local como contingência. Se a nuvem falhar, a voz local
-    assume a fala em vez de deixar a JORDAN muda.
+    A identidade vocal é original. Na V0.12 a Spark V2 funciona em modo local
+    com Kokoro + embeddings próprios e pós-processamento de prosódia. O cérebro
+    Manual Core roda separadamente no navegador e não depende de API.
     """
 
     def __init__(self):
-        self.provider_mode = str(os.getenv("JORDAN_TTS_PROVIDER", "auto") or "auto").strip().lower()
-        if self.provider_mode not in {"auto", "openai", "local"}:
-            self.provider_mode = "auto"
-        self.cloud_model = os.getenv("JORDAN_TTS_MODEL", RECIPE.get("cloud", {}).get("model", "gpt-4o-mini-tts"))
-        self.cloud_voice = os.getenv("JORDAN_TTS_VOICE", RECIPE.get("cloud", {}).get("voice", "coral"))
-        self._openai_client = None
+        # V0.12: a voz é deliberadamente local. Mesmo que um .env antigo ainda
+        # exista no PC, ele não volta a ativar serviços de IA/cloud por acidente.
+        self.provider_mode = "local"
         self.pipeline = None
         self._voice_cache: dict[str, Any] = {}
         self._build_lock = Lock()
@@ -69,28 +52,8 @@ class JordanTTSEngine:
         self.last_error = None
 
     @property
-    def cloud_available(self) -> bool:
-        return bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None
-
-    @property
     def local_available(self) -> bool:
         return bool(LOCAL_DEPS_OK and KPipeline is not None)
-
-    @property
-    def selected_provider(self) -> str:
-        if self.provider_mode == "openai":
-            return "openai"
-        if self.provider_mode == "local":
-            return "local"
-        return "openai" if self.cloud_available else "local"
-
-    @property
-    def openai_client(self):
-        if not self.cloud_available:
-            raise RuntimeError("OPENAI_API_KEY não configurada para o JORDAN Spark V2 Cloud.")
-        if self._openai_client is None:
-            self._openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        return self._openai_client
 
     def _ensure_local_pipeline(self):
         if not self.local_available:
@@ -154,17 +117,14 @@ class JordanTTSEngine:
             emotion for emotion in emotions
             if not (ROOT / "model" / f"jordan_spark_v2_{emotion}.pt").exists()
         ]
-        selected = self.selected_provider
-        ready = self.cloud_available or self.local_available
+        selected = "local"
+        ready = self.local_available
         return {
             "ready": bool(ready),
             "name": RECIPE.get("name", "JORDAN Spark V2"),
             "provider_mode": self.provider_mode,
             "provider": selected,
-            "cloud_available": self.cloud_available,
             "local_available": self.local_available,
-            "cloud_model": self.cloud_model,
-            "cloud_voice": self.cloud_voice,
             "missing_emotions": missing,
             "auto_repair": self.local_available,
             "cached_emotions": sorted(self._voice_cache.keys()),
@@ -196,62 +156,6 @@ class JordanTTSEngine:
         if "..." in t or "…" in t:
             return "soft"
         return "neutral"
-
-    def _cloud_instructions(self, emotion: str, tuning: dict | None = None) -> str:
-        tuning = tuning or {}
-        base = RECIPE.get("cloud", {}).get("style_prompt") or (
-            "Fale em português brasileiro com uma voz feminina jovem-adulta, clara, brilhante, "
-            "muito expressiva, rápida e carismática. Soe humana, inteligente e espontânea, com "
-            "um pequeno sorriso audível. Não soe como criança e não imite nenhuma personagem ou pessoa real."
-        )
-        emotion_map = RECIPE.get("cloud", {}).get("emotion_prompt", {})
-        emotion_text = emotion_map.get(emotion, emotion_map.get("neutral", ""))
-
-        speed = float(tuning.get("speed", 1.0) or 1.0)
-        pitch = float(tuning.get("pitch", 0.0) or 0.0)
-        energy = float(tuning.get("energy", 1.0) or 1.0)
-        expressive = float(tuning.get("expressiveness", 1.0) or 1.0)
-        brightness = float(tuning.get("brightness", 0.0) or 0.0)
-
-        adjustments = []
-        if speed >= 1.08:
-            adjustments.append("Mantenha um ritmo claramente rápido, mas sempre inteligível.")
-        elif speed <= 0.94:
-            adjustments.append("Diminua um pouco o ritmo e dê espaço às palavras.")
-        if pitch >= 0.8:
-            adjustments.append("Use uma colocação levemente mais aguda, sem infantilizar a voz.")
-        elif pitch <= -0.8:
-            adjustments.append("Use uma colocação um pouco mais grave e firme.")
-        if energy >= 1.10:
-            adjustments.append("Aumente a energia e o sorriso na emissão.")
-        elif energy <= 0.90:
-            adjustments.append("Reduza a energia e fale de maneira mais macia.")
-        if expressive >= 1.12:
-            adjustments.append("Varie mais a entonação e dê intenção clara a cada frase.")
-        if brightness >= 0.12:
-            adjustments.append("Use um timbre mais luminoso e aberto, com pouca nasalidade.")
-        elif brightness <= -0.12:
-            adjustments.append("Use um timbre um pouco mais quente e suave.")
-
-        return " ".join(part for part in [base, emotion_text, *adjustments] if part).strip()
-
-    def _cloud_wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
-        clean = self._pronounce(self._clean(text))
-        if not clean:
-            raise ValueError("Texto vazio para TTS.")
-        emo = self._auto_emotion(clean, emotion)
-        instructions = self._cloud_instructions(emo, tuning)
-        with self.openai_client.audio.speech.with_streaming_response.create(
-            model=self.cloud_model,
-            voice=self.cloud_voice,
-            input=clean,
-            instructions=instructions,
-            response_format="wav",
-        ) as response:
-            data = response.read()
-        if not data:
-            raise RuntimeError("O TTS neural retornou áudio vazio.")
-        return data
 
     @staticmethod
     def _presence(audio, amount: float):
@@ -352,25 +256,11 @@ class JordanTTSEngine:
         return out.getvalue()
 
     def wav_bytes(self, text: str, emotion: str = "auto", tuning: dict | None = None) -> bytes:
-        selected = self.selected_provider
         self.last_error = None
-
-        if selected == "openai":
-            try:
-                audio = self._cloud_wav_bytes(text, emotion, tuning)
-                self.last_provider = "openai"
-                return audio
-            except Exception as exc:
-                self.last_error = f"OpenAI TTS: {exc}"
-                if not self.local_available:
-                    raise
-
         try:
             audio = self._local_wav_bytes(text, emotion, tuning)
             self.last_provider = "local"
             return audio
         except Exception as exc:
-            local_error = f"Local TTS: {exc}"
-            if self.last_error:
-                raise RuntimeError(f"{self.last_error} | {local_error}") from exc
-            raise RuntimeError(local_error) from exc
+            self.last_error = f"Local TTS: {exc}"
+            raise RuntimeError(self.last_error) from exc

@@ -824,7 +824,7 @@ export class JordanAssistant {
   async tryLocationRequest(original, text) {
     if (!this.location) return null;
 
-    // Contingência local: mesmo se o Agent Core estiver offline, perguntas
+    // Contingência local: perguntas sobre localização nunca devem cair em fallback genérico, mesmo se outros módulos falharem.
     // simples sobre a localização atual não devem cair numa resposta genérica.
     if (/\b(onde eu estou|onde estou agora|qual (?:e |é )?minha localizacao|em que cidade eu estou|what(?:'s| is) my location|where am i|donde estoy)\b/.test(text)) {
       try {

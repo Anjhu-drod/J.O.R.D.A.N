@@ -1,9 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title JORDAN Core V0.11 - Setup
+title JORDAN Voice Core V0.12 - Setup
 
-echo === JORDAN CORE V0.11 / SPARK V2 ===
+echo === JORDAN V0.12 / SPARK V2 LOCAL ===
 where py >nul 2>nul
 if errorlevel 1 (
   echo Python nao encontrado. Instale Python 3.11 ou 3.12 e tente novamente.
@@ -24,20 +24,22 @@ if errorlevel 1 (
 
 echo.
 echo Dependencias instaladas.
-echo A Spark V2 neural cloud nao precisa de eSpeak.
-echo O nucleo LOCAL Kokoro pode precisar do eSpeak NG para pronuncia/fonetica no Windows.
-echo Se quiser o fallback local completo, instale eSpeak NG:
+echo O cerebro Manual Core nao usa Python, API ou chave.
+echo Este ambiente Python existe somente para a voz Spark V2 local.
+echo.
+echo O Kokoro pode precisar do eSpeak NG para pronuncia/fonetica no Windows.
+echo Se necessario, instale eSpeak NG:
 echo https://github.com/espeak-ng/espeak-ng/releases
 echo.
 echo Tentando preparar os embeddings locais Spark V2...
 python scripts\build_voice.py
 if errorlevel 1 (
-  echo [AVISO] Nao consegui preconstruir a voz local. O servidor ainda pode usar a voz cloud se o .env estiver configurado.
+  echo [AVISO] Nao consegui preconstruir a voz local. O servidor tentara reconstruir na primeira fala.
 ) else (
-  echo [OK] Fallback local Spark V2 preparado.
+  echo [OK] Spark V2 local preparada.
 )
 echo.
 echo Setup concluido.
-echo 1. Execute CONFIGURE_AGENT_CORE.bat
-echo 2. Execute RUN_VOICE_SERVER.bat
+echo Agora execute RUN_VOICE_SERVER.bat apenas quando quiser a voz neural local.
+echo O Manual Core funciona mesmo sem abrir esse BAT.
 pause
